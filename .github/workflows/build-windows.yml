@@ -1,0 +1,70 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送版本标签时触发（如 v1.0.0）
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout代码
+      uses: actions/checkout@v3
+
+    - name: 设置Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: 打包Windows EXE
+      run: |
+        pyinstaller build_windows.spec
+
+    - name: 复制额外文件
+      run: |
+        Copy-Item START_WINDOWS.bat dist\GPU-Server-Manager\
+        Copy-Item README.md dist\GPU-Server-Manager\
+        Copy-Item WINDOWS_BUILD.md dist\GPU-Server-Manager\
+        Copy-Item AUTH_AND_WINDOWS.md dist\GPU-Server-Manager\
+        Copy-Item .env.example dist\GPU-Server-Manager\
+
+    - name: 创建发布包
+      run: |
+        Compress-Archive -Path dist\GPU-Server-Manager\* -DestinationPath GPU-Server-Manager-Windows.zip
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v3
+      with:
+        name: GPU-Server-Manager-Windows
+        path: GPU-Server-Manager-Windows.zip
+
+    - name: 创建Release（如果是标签触发）
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: GPU-Server-Manager-Windows.zip
+        body: |
+          ## GPU 服务器管理系统 - Windows版本
+
+          ### 📦 安装说明
+          1. 解压 GPU-Server-Manager-Windows.zip
+          2. 配置 config\servers.yaml
+          3. 双击 START_WINDOWS.bat 启动
+          4. 浏览器访问 http://localhost:5000
+
+          ### 🔑 默认密码
+          管理员密码：GPU-admin@renzhihan-2025
+
+          ### 📚 文档
+          - [完整文档](README.md)
+          - [Windows使用指南](WINDOWS_BUILD.md)
+          - [认证系统说明](AUTH_AND_WINDOWS.md)

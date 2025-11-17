@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}GPU 监控 - GPU 服务器管理系统{% endblock %}
+{% block page_title %}GPU 监控{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-md-6">
+        <select class="form-select" id="serverSelect" onchange="loadGPUInfo()">
+            <option value="">请选择服务器...</option>
+        </select>
+    </div>
+    <div class="col-md-6 text-end">
+        <button class="btn btn-primary" onclick="loadGPUInfo()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+        <button class="btn btn-success" id="autoRefreshBtn" onclick="toggleAutoRefresh()">
+            <i class="bi bi-play-fill"></i> 自动刷新
+        </button>
+    </div>
+</div>
+
+<!-- GPU统计概览 -->
+<div id="gpuStats" class="mb-3"></div>
+
+<!-- GPU卡片网格 -->
+<div id="gpuContainer"></div>
+
+<style>
+.gpu-compact-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: 100%;
+}
+.gpu-compact-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+}
+.gpu-stat-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin: 0.25rem 0;
+}
+.gpu-stat-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+}
+.gpu-progress-mini {
+    height: 8px;
+    margin-top: 0.5rem;
+}
+.stat-card {
+    border-left: 4px solid;
+}
+.stat-card.stat-idle { border-left-color: #28a745; }
+.stat-card.stat-busy { border-left-color: #ffc107; }
+.stat-card.stat-full { border-left-color: #dc3545; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let autoRefreshInterval = null;
+let selectedServer = null;
+
+async function loadServers() {
+    const result = await utils.apiRequest('/api/servers');
+    if (result.success) {
+        const select = document.getElementById('serverSelect');
+        select.innerHTML = '<option value="">请选择服务器...</option>' +
+            result.servers
+                .filter(s => s.gpu_enabled)
+                .map(s => `<option value="${s.name}">${s.name} (${s.host})</option>`)
+                .join('');
+    }
+}
+
+async function loadGPUInfo() {
+    selectedServer = document.getElementById('serverSelect').value;
+    if (!selectedServer) {
+        document.getElementById('gpuContainer').innerHTML =
+            '<div class="alert alert-info">请选择一个 GPU 服务器</div>';
+        return;
+    }
+
+    document.getElementById('gpuContainer').innerHTML =
+        '<div class="text-center"><div class="spinner-border"></div></div>';
+
+    const result = await utils.apiRequest(`/api/gpu/${selectedServer}`);
+
+    if (!result.success) {
+        document.getElementById('gpuContainer').innerHTML =
+            `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> ${result.error}</div>`;
+        return;
+    }
+
+    renderGPUs(result.gpus);
+}
+
+function renderGPUs(gpus) {
+    if (gpus.length === 0) {
+        document.getElementById('gpuContainer').innerHTML =
+            '<div class="alert alert-warning">未检测到 GPU</div>';
+        return;
+    }
+
+    // 计算统计信息
+    const stats = {
+        total: gpus.length,
+        idle: gpus.filter(g => g.memory_percent === 0).length,
+        busy: gpus.filter(g => g.memory_percent > 0 && g.memory_percent < 90).length,
+        full: gpus.filter(g => g.memory_percent >= 90).length
+    };
+
+    // 渲染统计卡片
+    const statsHtml = `
+        <div class="row">
+            <div class="col-lg-3 col-md-6 mb-3">
+                <div class="card stat-card stat-idle">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="gpu-stat-label">空闲</div>
+                                <div class="gpu-stat-number text-success">${stats.idle}</div>
+                            </div>
+                            <i class="bi bi-check-circle" style="font-size: 2rem; color: #28a745;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 mb-3">
+                <div class="card stat-card stat-busy">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="gpu-stat-label">使用中</div>
+                                <div class="gpu-stat-number text-warning">${stats.busy}</div>
+                            </div>
+                            <i class="bi bi-activity" style="font-size: 2rem; color: #ffc107;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 mb-3">
+                <div class="card stat-card stat-full">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="gpu-stat-label">高负载</div>
+                                <div class="gpu-stat-number text-danger">${stats.full}</div>
+                            </div>
+                            <i class="bi bi-exclamation-triangle" style="font-size: 2rem; color: #dc3545;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="gpu-stat-label">总计</div>
+                                <div class="gpu-stat-number text-primary">${stats.total}</div>
+                            </div>
+                            <i class="bi bi-gpu-card" style="font-size: 2rem; color: #007bff;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.getElementById('gpuStats').innerHTML = statsHtml;
+
+    // 紧凑网格布局 - 自适应：超大屏6列，大屏4列，中屏3列，小屏2列
+    const html = `
+        <div class="row">
+            ${gpus.map(gpu => `
+                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 mb-3">
+                    <div class="card gpu-compact-card ${gpu.memory_percent === 0 ? 'border-success' : gpu.memory_percent >= 90 ? 'border-danger' : ''}">
+                        <div class="card-header bg-${gpu.memory_percent === 0 ? 'success' : gpu.memory_percent >= 90 ? 'danger' : 'primary'} text-white py-2">
+                            <small><strong>GPU ${gpu.id}</strong></small>
+                        </div>
+                        <div class="card-body p-2">
+                            <div class="text-truncate mb-2" title="${gpu.name}">
+                                <small>${gpu.name.split(' ').slice(-2).join(' ')}</small>
+                            </div>
+
+                            <div class="d-flex justify-content-between mb-1">
+                                <small class="text-muted">
+                                    <i class="bi bi-thermometer-half"></i> ${gpu.temperature}°C
+                                </small>
+                                <small class="text-muted">
+                                    <i class="bi bi-speedometer2"></i> ${gpu.utilization}%
+                                </small>
+                            </div>
+
+                            <div>
+                                <small class="text-muted">显存:</small>
+                                <div class="progress gpu-progress-mini">
+                                    <div class="progress-bar ${gpu.memory_percent > 90 ? 'bg-danger' : gpu.memory_percent > 70 ? 'bg-warning' : 'bg-success'}"
+                                         style="width: ${gpu.memory_percent}%"></div>
+                                </div>
+                                <small class="text-muted">${gpu.memory_used}/${gpu.memory_total}MB (${gpu.memory_percent}%)</small>
+                            </div>
+
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-secondary w-100 py-0" onclick="loadProcesses(${gpu.id})" style="font-size: 0.75rem;">
+                                    <i class="bi bi-list"></i> 进程
+                                </button>
+                                <div id="processes-${gpu.id}" class="mt-1"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    document.getElementById('gpuContainer').innerHTML = html;
+}
+
+async function loadProcesses(gpuId) {
+    const container = document.getElementById(`processes-${gpuId}`);
+    container.innerHTML = '<div class="spinner-border spinner-border-sm" style="width: 1rem; height: 1rem;"></div>';
+
+    const result = await utils.apiRequest(`/api/gpu/${selectedServer}/processes?gpu_id=${gpuId}`);
+
+    if (!result.success) {
+        container.innerHTML = `<small class="text-danger">${result.error}</small>`;
+        return;
+    }
+
+    if (result.processes.length === 0) {
+        container.innerHTML = '<small class="text-muted">无进程</small>';
+        return;
+    }
+
+    const html = `
+        <div style="font-size: 0.7rem;">
+            ${result.processes.map(p => `
+                <div class="border-top pt-1 mt-1">
+                    <div><strong>PID:</strong> ${p.pid}</div>
+                    <div><strong>显存:</strong> ${p.mem} MB</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function toggleAutoRefresh() {
+    const btn = document.getElementById('autoRefreshBtn');
+
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        btn.innerHTML = '<i class="bi bi-play-fill"></i> 自动刷新';
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-success');
+    } else {
+        autoRefreshInterval = setInterval(loadGPUInfo, 5000);
+        btn.innerHTML = '<i class="bi bi-stop-fill"></i> 停止刷新';
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-danger');
+        utils.showAlert('已启动自动刷新 (5秒间隔)', 'success');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadServers();
+});
+</script>
+{% endblock %}

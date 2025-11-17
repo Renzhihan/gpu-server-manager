@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  gpu-server-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gpu-server-manager
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # 挂载配置文件
+      - ./config:/app/config
+      # 挂载 SSH 密钥（可选）
+      - ~/.ssh:/root/.ssh:ro
+      # 持久化数据（可选）
+      - ./data:/app/data
+    environment:
+      - FLASK_ENV=production
+      - FLASK_PORT=5000
+      # 邮件配置（从 .env 文件加载）
+      - SMTP_SERVER=${SMTP_SERVER}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM}
+    env_file:
+      - .env
+    networks:
+      - gpu-manager-network
+
+networks:
+  gpu-manager-network:
+    driver: bridge

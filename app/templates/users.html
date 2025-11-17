@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+
+{% block title %}用户管理 - GPU 服务器管理系统{% endblock %}
+{% block page_title %}用户管理{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-md-6">
+        <select class="form-select" id="serverSelect" onchange="loadUsers()">
+            <option value="">请选择服务器...</option>
+        </select>
+    </div>
+    <div class="col-md-6 text-end">
+        <button class="btn btn-success" onclick="showCreateUserModal()">
+            <i class="bi bi-person-plus"></i> 新建用户
+        </button>
+        <button class="btn btn-primary" onclick="loadUsers()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="usersContainer">
+            <div class="alert alert-info">请选择一个服务器</div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建用户 Modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-plus"></i> 创建新用户（增强版）</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 基本信息 -->
+                <h6 class="mb-3"><i class="bi bi-person"></i> 基本信息</h6>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="username" class="form-label">用户名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="username" placeholder="例如: user001" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="password" class="form-label">密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" id="password" required>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <!-- 工作目录配置 -->
+                <h6 class="mb-3"><i class="bi bi-folder"></i> 工作目录配置</h6>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="createWorkDir">
+                    <label class="form-check-label" for="createWorkDir">
+                        创建工作目录
+                    </label>
+                </div>
+                <div id="workDirConfig" style="display:none;">
+                    <div class="mb-3">
+                        <label for="workDirPath" class="form-label">工作目录路径</label>
+                        <input type="text" class="form-control" id="workDirPath" placeholder="例如: /data/users/user001">
+                        <div class="form-text">将自动创建此目录并设置权限</div>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <!-- Docker容器配置 -->
+                <h6 class="mb-3"><i class="bi bi-box"></i> Docker容器配置</h6>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="createDockerContainer">
+                    <label class="form-check-label" for="createDockerContainer">
+                        创建Docker容器
+                    </label>
+                </div>
+                <div id="dockerConfig" style="display:none;">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="dockerImage" class="form-label">Docker镜像</label>
+                            <input type="text" class="form-control" id="dockerImage" placeholder="例如: pytorch/pytorch:latest">
+                            <div class="form-text">
+                                常用镜像：
+                                <span class="badge bg-secondary" style="cursor:pointer;" onclick="document.getElementById('dockerImage').value='pytorch/pytorch:latest'">PyTorch</span>
+                                <span class="badge bg-secondary" style="cursor:pointer;" onclick="document.getElementById('dockerImage').value='tensorflow/tensorflow:latest-gpu'">TensorFlow</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="containerName" class="form-label">容器名称</label>
+                            <input type="text" class="form-control" id="containerName" placeholder="自动填充为用户名">
+                            <div class="form-text">留空则使用用户名</div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="sshPort" class="form-label">SSH端口映射</label>
+                            <input type="number" class="form-control" id="sshPort" placeholder="例如: 9910" value="9910">
+                            <div class="form-text">主机端口:容器22端口</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="volumeMapping" class="form-label">卷映射</label>
+                            <input type="text" class="form-control" id="volumeMapping" value="/:/home">
+                            <div class="form-text">格式: 主机路径:容器路径</div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <strong>预览命令：</strong>
+                        <pre id="dockerCommandPreview" style="background:#f8f9fa; padding:0.5rem; margin-top:0.5rem; font-size:0.875rem;"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-success" onclick="createUser()">
+                    <i class="bi bi-check-circle"></i> 创建用户
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#dockerCommandPreview {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedServer = null;
+
+async function loadServers() {
+    const result = await utils.apiRequest('/api/servers');
+    if (result.success) {
+        const select = document.getElementById('serverSelect');
+        select.innerHTML = '<option value="">请选择服务器...</option>' +
+            result.servers.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+    }
+}
+
+async function loadUsers() {
+    selectedServer = document.getElementById('serverSelect').value;
+    if (!selectedServer) return;
+
+    const container = document.getElementById('usersContainer');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
+    const result = await utils.apiRequest(`/api/users/${selectedServer}`);
+
+    if (!result.success) {
+        container.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        return;
+    }
+
+    if (result.users.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">没有普通用户</div>';
+        return;
+    }
+
+    const html = `
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>用户名</th>
+                    <th>UID</th>
+                    <th>主目录</th>
+                    <th>Shell</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${result.users.map(u => `
+                    <tr>
+                        <td><i class="bi bi-person"></i> ${u.username}</td>
+                        <td>${u.uid}</td>
+                        <td><code>${u.home}</code></td>
+                        <td>${u.shell}</td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" onclick="showChangePasswordModal('${u.username}')">
+                                <i class="bi bi-key"></i> 改密码
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')">
+                                <i class="bi bi-trash"></i> 删除
+                            </button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    container.innerHTML = html;
+}
+
+function showCreateUserModal() {
+    if (!selectedServer) {
+        utils.showAlert('请先选择服务器', 'warning');
+        return;
+    }
+
+    // 重置表单
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
+    document.getElementById('createWorkDir').checked = false;
+    document.getElementById('workDirPath').value = '';
+    document.getElementById('createDockerContainer').checked = false;
+    document.getElementById('dockerImage').value = '';
+    document.getElementById('containerName').value = '';
+    document.getElementById('sshPort').value = '9910';
+    document.getElementById('volumeMapping').value = '/:/home';
+    document.getElementById('workDirConfig').style.display = 'none';
+    document.getElementById('dockerConfig').style.display = 'none';
+    document.getElementById('dockerCommandPreview').textContent = '';
+
+    new bootstrap.Modal(document.getElementById('createUserModal')).show();
+}
+
+// 复选框切换事件
+document.addEventListener('DOMContentLoaded', () => {
+    const createWorkDirCheckbox = document.getElementById('createWorkDir');
+    const createDockerCheckbox = document.getElementById('createDockerContainer');
+    const usernameInput = document.getElementById('username');
+
+    if (createWorkDirCheckbox) {
+        createWorkDirCheckbox.addEventListener('change', function() {
+            document.getElementById('workDirConfig').style.display = this.checked ? 'block' : 'none';
+            if (this.checked && !document.getElementById('workDirPath').value) {
+                const username = usernameInput.value.trim();
+                if (username) {
+                    document.getElementById('workDirPath').value = `/data/users/${username}`;
+                }
+            }
+        });
+    }
+
+    if (createDockerCheckbox) {
+        createDockerCheckbox.addEventListener('change', function() {
+            document.getElementById('dockerConfig').style.display = this.checked ? 'block' : 'none';
+            updateDockerCommand();
+        });
+    }
+
+    // 自动更新Docker命令预览
+    ['username', 'dockerImage', 'containerName', 'sshPort', 'volumeMapping'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('input', updateDockerCommand);
+        }
+    });
+});
+
+function updateDockerCommand() {
+    const username = document.getElementById('username').value.trim();
+    const dockerImage = document.getElementById('dockerImage').value.trim();
+    const containerName = document.getElementById('containerName').value.trim() || username;
+    const sshPort = document.getElementById('sshPort').value.trim() || '9910';
+    const volumeMapping = document.getElementById('volumeMapping').value.trim() || '/:/home';
+
+    if (!username || !dockerImage) {
+        document.getElementById('dockerCommandPreview').textContent = '请填写用户名和Docker镜像';
+        return;
+    }
+
+    // 判断服务器类型（2080ti使用nvidia-docker）
+    const serverSelect = document.getElementById('serverSelect');
+    const selectedOption = serverSelect.options[serverSelect.selectedIndex];
+    const serverName = selectedOption ? selectedOption.text : '';
+    const is2080ti = serverName.toLowerCase().includes('2080');
+
+    const dockerCmd = is2080ti ? 'nvidia-docker' : 'docker';
+
+    const command = `${dockerCmd} run -it -d \\
+  -p ${sshPort}:22 \\
+  -v ${volumeMapping} \\
+  --gpus all \\
+  --ipc=host \\
+  --pid=host \\
+  --name=${containerName} \\
+  ${dockerImage}`;
+
+    document.getElementById('dockerCommandPreview').textContent = command;
+}
+
+async function createUser() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    if (!username || !password) {
+        utils.showAlert('请填写用户名和密码', 'warning');
+        return;
+    }
+
+    // 工作目录配置
+    const createWorkDir = document.getElementById('createWorkDir').checked;
+    const workDirPath = createWorkDir ? document.getElementById('workDirPath').value.trim() : null;
+
+    // Docker容器配置
+    const createDockerContainer = document.getElementById('createDockerContainer').checked;
+    let dockerConfig = null;
+    if (createDockerContainer) {
+        const dockerImage = document.getElementById('dockerImage').value.trim();
+        if (!dockerImage) {
+            utils.showAlert('请填写Docker镜像', 'warning');
+            return;
+        }
+
+        dockerConfig = {
+            image: dockerImage,
+            container_name: document.getElementById('containerName').value.trim() || username,
+            ssh_port: parseInt(document.getElementById('sshPort').value) || 9910,
+            volume_mapping: document.getElementById('volumeMapping').value.trim() || '/:/home'
+        };
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById('createUserModal')).hide();
+
+    utils.showAlert('正在创建用户，请稍候...', 'info');
+
+    const result = await utils.apiRequest(`/api/users/${selectedServer}/create-advanced`, {
+        method: 'POST',
+        body: JSON.stringify({
+            username,
+            password,
+            work_dir: workDirPath,
+            docker_config: dockerConfig
+        })
+    });
+
+    if (result.success) {
+        let message = `用户 ${username} 创建成功！`;
+        if (result.details) {
+            message += `\n\n详情：\n${result.details}`;
+        }
+        utils.showAlert(message, 'success');
+        loadUsers();
+    } else {
+        utils.showAlert(`创建失败: ${result.error}`, 'danger');
+    }
+}
+
+async function deleteUser(username) {
+    if (!confirm(`确定要删除用户 ${username} 吗？此操作将同时删除用户主目录！`)) {
+        return;
+    }
+
+    // 高危操作需要密码验证
+    utils.requirePasswordForDangerousAction(async () => {
+        const result = await utils.apiRequest(`/api/users/${selectedServer}/${username}/delete?remove_home=true`, {
+            method: 'DELETE'
+        });
+
+        if (result.success) {
+            utils.showAlert(result.message, 'success');
+            loadUsers();
+        } else {
+            utils.showAlert(result.error, 'danger');
+        }
+    });
+}
+
+function showChangePasswordModal(username) {
+    const newPassword = prompt(`请输入用户 ${username} 的新密码:`);
+    if (newPassword) {
+        changeUserPassword(username, newPassword);
+    }
+}
+
+async function changeUserPassword(username, newPassword) {
+    const result = await utils.apiRequest(`/api/users/${selectedServer}/${username}/password`, {
+        method: 'PUT',
+        body: JSON.stringify({ new_password: newPassword })
+    });
+
+    if (result.success) {
+        utils.showAlert(result.message, 'success');
+    } else {
+        utils.showAlert(result.error, 'danger');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadServers();
+});
+</script>
+{% endblock %}

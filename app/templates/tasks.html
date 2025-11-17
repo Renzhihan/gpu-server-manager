@@ -1,0 +1,693 @@
+{% extends "base.html" %}
+
+{% block title %}任务监控 - GPU 服务器管理系统{% endblock %}
+{% block page_title %}任务监控{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-md-6">
+        <button class="btn btn-success" onclick="showCreateTaskModal()">
+            <i class="bi bi-plus-circle"></i> 新建任务监控
+        </button>
+    </div>
+    <div class="col-md-6 text-end">
+        <button class="btn btn-primary" onclick="loadTasks()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div id="tasksContainer">
+            <div class="text-center"><div class="spinner-border"></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建任务 Modal -->
+<div class="modal fade" id="createTaskModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-list-task"></i> 创建任务监控</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 步骤指示器 -->
+                <div class="mb-4">
+                    <div class="progress" style="height: 30px;">
+                        <div class="progress-bar" id="stepProgress" style="width: 33%;">步骤 1/3: 选择类型</div>
+                    </div>
+                </div>
+
+                <!-- 步骤 1: 选择监控类型 -->
+                <div id="step1" class="step-content">
+                    <h6><i class="bi bi-1-circle"></i> 选择监控类型</h6>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="card monitor-type-card" onclick="selectMonitorType('process')">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-play-circle" style="font-size: 3rem; color: #0d6efd;"></i>
+                                    <h5 class="mt-3">进程监控</h5>
+                                    <p class="text-muted">监控GPU任务进程，任务结束时发送邮件通知</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="card monitor-type-card" onclick="selectMonitorType('gpu_idle')">
+                                <div class="card-body text-center">
+                                    <i class="bi bi-bell" style="font-size: 3rem; color: #198754;"></i>
+                                    <h5 class="mt-3">空卡监听</h5>
+                                    <p class="text-muted">监听GPU空闲状态，当GPU无进程且显存为0时发送通知</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <style>
+                        .monitor-type-card {
+                            cursor: pointer;
+                            transition: all 0.3s;
+                        }
+                        .monitor-type-card:hover {
+                            transform: translateY(-5px);
+                            box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+                        }
+                    </style>
+                </div>
+
+                <!-- 步骤 2: 选择服务器和目标 -->
+                <div id="step2" class="step-content" style="display:none;">
+                    <h6><i class="bi bi-2-circle"></i> <span id="step2Title">选择服务器和进程</span></h6>
+
+                    <div class="mb-3">
+                        <label class="form-label">选择服务器</label>
+                        <select class="form-select" id="taskServer" onchange="onServerSelected()">
+                            <option value="">请选择服务器...</option>
+                        </select>
+                    </div>
+
+                    <!-- 进程监控界面 -->
+                    <div id="processMonitorUI" style="display:none;">
+                        <!-- GPU 状态概览 -->
+                        <div id="gpuStatusOverview" class="mb-3"></div>
+
+                        <!-- 运行中的进程列表 -->
+                        <div id="runningProcesses" class="mb-3">
+                            <h6 class="text-muted">运行中的 GPU 进程</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th><input type="checkbox" id="selectAllProcesses" onchange="toggleSelectAll()"></th>
+                                            <th>GPU</th>
+                                            <th>PID</th>
+                                            <th>进程名</th>
+                                            <th>显存</th>
+                                            <th>用户</th>
+                                            <th>启动时间</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="processTableBody">
+                                        <tr><td colspan="7" class="text-center">请先选择服务器</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GPU空闲监听界面 -->
+                    <div id="gpuIdleMonitorUI" style="display:none;">
+                        <div id="gpuIdleStatusOverview" class="mb-3"></div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>提示:</strong> 选择要监听的GPU卡，当该卡空闲时（无进程且显存为0MB）会自动发送邮件通知。
+                        </div>
+                    </div>
+
+                    <div class="text-end">
+                        <button class="btn btn-secondary" onclick="goToStep(1)">
+                            <i class="bi bi-arrow-left"></i> 上一步
+                        </button>
+                        <button class="btn btn-primary" onclick="goToStep(3)" id="nextToStep3" disabled>
+                            <i class="bi bi-arrow-right"></i> 下一步
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤 3: 填写监控信息 -->
+                <div id="step3" class="step-content" style="display:none;">
+                    <h6><i class="bi bi-3-circle"></i> 填写监控信息</h6>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="taskName" class="form-label">任务名称 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="taskName" placeholder="例如: ResNet 训练任务">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="selectedTarget" class="form-label">监控目标</label>
+                                <input type="text" class="form-control" id="selectedTarget" readonly>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label for="notifyEmails" class="form-label">
+                                    <i class="bi bi-envelope"></i> 通知邮箱
+                                    <span class="badge bg-info">会自动记住</span>
+                                </label>
+                                <input type="text" class="form-control" id="notifyEmails"
+                                       placeholder="user1@example.com, user2@example.com">
+                                <div class="form-text">多个邮箱用逗号分隔，任务完成后自动发送邮件</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="taskTimeout" class="form-label">
+                                    超时时间 (秒)
+                                    <span class="badge bg-secondary">可选</span>
+                                </label>
+                                <input type="number" class="form-control" id="taskTimeout" placeholder="留空表示无限期">
+                                <div class="form-text">仅进程监控使用</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-end">
+                        <button class="btn btn-secondary" onclick="goToStep(2)">
+                            <i class="bi bi-arrow-left"></i> 上一步
+                        </button>
+                        <button class="btn btn-success" onclick="createTask()">
+                            <i class="bi bi-check-circle"></i> 创建监控任务
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑任务 Modal -->
+<div class="modal fade" id="editTaskModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> 编辑任务</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editTaskId">
+                <div class="mb-3">
+                    <label for="editTaskName" class="form-label">任务名称</label>
+                    <input type="text" class="form-control" id="editTaskName">
+                </div>
+                <div class="mb-3">
+                    <label for="editNotifyEmails" class="form-label">通知邮箱</label>
+                    <input type="text" class="form-control" id="editNotifyEmails"
+                           placeholder="user1@example.com, user2@example.com">
+                    <div class="form-text">多个邮箱用逗号分隔</div>
+                </div>
+                <div class="mb-3">
+                    <label for="editTaskTimeout" class="form-label">超时时间 (秒)</label>
+                    <input type="number" class="form-control" id="editTaskTimeout" placeholder="留空表示无限期">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveTaskEdit()">
+                    <i class="bi bi-save"></i> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedProcesses = [];
+let selectedGPUs = [];
+let currentStep = 1;
+let savedEmails = '';
+let monitorType = 'process';  // 'process' 或 'gpu_idle'
+
+async function loadServers() {
+    const result = await utils.apiRequest('/api/servers');
+    if (result.success) {
+        const select = document.getElementById('taskServer');
+        select.innerHTML = '<option value="">请选择服务器...</option>' +
+            result.servers.filter(s => s.gpu_enabled).map(s =>
+                `<option value="${s.name}">${s.name} (${s.host}) - ${s.description || ''}</option>`
+            ).join('');
+    }
+}
+
+async function loadUserPrefs() {
+    const prefs = await utils.loadUserPrefs();
+    if (prefs.notify_emails) {
+        savedEmails = prefs.notify_emails;
+        document.getElementById('notifyEmails').value = savedEmails;
+    }
+}
+
+function selectMonitorType(type) {
+    monitorType = type;
+    goToStep(2);
+
+    // 更新步骤标题
+    if (type === 'process') {
+        document.getElementById('step2Title').textContent = '选择服务器和进程';
+    } else {
+        document.getElementById('step2Title').textContent = '选择服务器和GPU卡';
+    }
+}
+
+async function onServerSelected() {
+    const serverName = document.getElementById('taskServer').value;
+    if (!serverName) return;
+
+    if (monitorType === 'process') {
+        document.getElementById('processMonitorUI').style.display = 'block';
+        document.getElementById('gpuIdleMonitorUI').style.display = 'none';
+        await loadGPUStatus(serverName, 'gpuStatusOverview');
+        await loadGPUProcesses(serverName);
+    } else {
+        document.getElementById('processMonitorUI').style.display = 'none';
+        document.getElementById('gpuIdleMonitorUI').style.display = 'block';
+        await loadGPUStatusForIdle(serverName);
+    }
+}
+
+async function loadGPUStatus(serverName, containerId) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm"></div> 加载GPU状态...</div>';
+
+    const result = await utils.apiRequest(`/api/gpu/${serverName}`);
+
+    if (!result.success) {
+        container.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        return;
+    }
+
+    const html = `
+        <div class="row">
+            ${result.gpus.map(gpu => `
+                <div class="col-md-4 mb-2">
+                    <div class="card">
+                        <div class="card-body p-2">
+                            <h6 class="card-title">GPU ${gpu.id}: ${gpu.name}</h6>
+                            <div class="d-flex justify-content-between small">
+                                <span><i class="bi bi-thermometer"></i> ${gpu.temperature}°C</span>
+                                <span><i class="bi bi-speedometer2"></i> ${gpu.utilization}%</span>
+                            </div>
+                            <div class="progress mt-1" style="height: 10px;">
+                                <div class="progress-bar ${gpu.memory_percent > 80 ? 'bg-danger' : 'bg-success'}"
+                                     style="width: ${gpu.memory_percent}%"></div>
+                            </div>
+                            <small class="text-muted">显存: ${gpu.memory_used}/${gpu.memory_total} MB (${gpu.memory_percent}%)</small>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+async function loadGPUStatusForIdle(serverName) {
+    const container = document.getElementById('gpuIdleStatusOverview');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm"></div> 加载GPU状态...</div>';
+
+    const result = await utils.apiRequest(`/api/gpu/${serverName}`);
+
+    if (!result.success) {
+        container.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        return;
+    }
+
+    const html = `
+        <h6 class="text-muted mb-3">选择要监听的GPU卡</h6>
+        <div class="row">
+            ${result.gpus.map(gpu => `
+                <div class="col-md-6 mb-3">
+                    <div class="card ${gpu.memory_used === 0 ? 'border-success' : ''}" style="cursor: pointer;" onclick="toggleGPUSelection(${gpu.id})">
+                        <div class="card-body">
+                            <div class="form-check">
+                                <input class="form-check-input gpu-idle-checkbox" type="checkbox" value="${gpu.id}" id="gpu_${gpu.id}">
+                                <label class="form-check-label w-100" for="gpu_${gpu.id}">
+                                    <h6>GPU ${gpu.id}: ${gpu.name}</h6>
+                                    <div class="d-flex justify-content-between small mt-2">
+                                        <span><i class="bi bi-thermometer"></i> ${gpu.temperature}°C</span>
+                                        <span><i class="bi bi-speedometer2"></i> ${gpu.utilization}%</span>
+                                        <span class="${gpu.memory_used === 0 ? 'text-success' : 'text-danger'}">
+                                            <i class="bi bi-${gpu.memory_used === 0 ? 'check-circle' : 'exclamation-circle'}"></i>
+                                            ${gpu.memory_used} MB
+                                        </span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function toggleGPUSelection(gpuId) {
+    const checkbox = document.getElementById(`gpu_${gpuId}`);
+    checkbox.checked = !checkbox.checked;
+    updateSelectedGPUs();
+}
+
+function updateSelectedGPUs() {
+    selectedGPUs = [];
+    document.querySelectorAll('.gpu-idle-checkbox:checked').forEach(cb => {
+        selectedGPUs.push(parseInt(cb.value));
+    });
+    document.getElementById('nextToStep3').disabled = selectedGPUs.length === 0;
+}
+
+async function loadGPUProcesses(serverName) {
+    const tbody = document.getElementById('processTableBody');
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center"><div class="spinner-border spinner-border-sm"></div> 加载进程...</td></tr>';
+
+    const result = await utils.apiRequest(`/api/gpu/${serverName}/all-processes`);
+
+    if (!result.success || result.processes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">当前没有运行中的 GPU 进程</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = result.processes.map(p => `
+        <tr>
+            <td><input type="checkbox" class="process-checkbox" value="${p.pid}" data-gpu="${p.gpu_id}" onchange="updateSelectedProcesses()"></td>
+            <td><span class="badge bg-primary">GPU ${p.gpu_id}</span></td>
+            <td><code>${p.pid}</code></td>
+            <td>${p.process_name}</td>
+            <td>${p.memory_used} MB</td>
+            <td>${p.user}</td>
+            <td><small>${p.start_time}</small></td>
+        </tr>
+    `).join('');
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAllProcesses').checked;
+    document.querySelectorAll('.process-checkbox').forEach(cb => {
+        cb.checked = selectAll;
+    });
+    updateSelectedProcesses();
+}
+
+function updateSelectedProcesses() {
+    selectedProcesses = [];
+    document.querySelectorAll('.process-checkbox:checked').forEach(cb => {
+        selectedProcesses.push({
+            pid: parseInt(cb.value),
+            gpu_id: parseInt(cb.getAttribute('data-gpu'))
+        });
+    });
+
+    if (selectedProcesses.length > 0) {
+        const pids = selectedProcesses.map(p => p.pid).join(', ');
+        document.getElementById('selectedTarget').value = `进程 PID: ${pids}`;
+    }
+
+    document.getElementById('nextToStep3').disabled = selectedProcesses.length === 0;
+}
+
+function goToStep(step) {
+    currentStep = step;
+
+    // 隐藏所有步骤
+    document.querySelectorAll('.step-content').forEach(el => {
+        el.style.display = 'none';
+    });
+
+    // 显示当前步骤
+    document.getElementById(`step${step}`).style.display = 'block';
+
+    // 更新进度条
+    const progress = document.getElementById('stepProgress');
+    const percentage = (step / 3) * 100;
+    progress.style.width = `${percentage}%`;
+
+    const stepText = {
+        1: '步骤 1/3: 选择类型',
+        2: '步骤 2/3: 选择目标',
+        3: '步骤 3/3: 填写信息'
+    };
+    progress.textContent = stepText[step];
+}
+
+function showCreateTaskModal() {
+    // 重置状态
+    selectedProcesses = [];
+    selectedGPUs = [];
+    currentStep = 1;
+    monitorType = 'process';
+    document.getElementById('taskServer').value = '';
+    document.getElementById('taskName').value = '';
+    document.getElementById('selectedTarget').value = '';
+    document.getElementById('taskTimeout').value = '';
+    document.getElementById('notifyEmails').value = savedEmails;
+
+    goToStep(1);
+    new bootstrap.Modal(document.getElementById('createTaskModal')).show();
+}
+
+async function createTask() {
+    const serverName = document.getElementById('taskServer').value;
+    const taskName = document.getElementById('taskName').value.trim();
+    const emailsStr = document.getElementById('notifyEmails').value.trim();
+    const timeoutStr = document.getElementById('taskTimeout').value.trim();
+    const timeout = timeoutStr ? parseInt(timeoutStr) : null;
+
+    if (!serverName || !taskName) {
+        utils.showAlert('请填写服务器和任务名称', 'warning');
+        return;
+    }
+
+    const notifyEmails = emailsStr ? emailsStr.split(',').map(e => e.trim()).filter(e => e) : [];
+
+    // 保存邮箱到用户偏好
+    if (emailsStr && emailsStr !== savedEmails) {
+        await utils.saveUserPrefs({ notify_emails: emailsStr });
+        savedEmails = emailsStr;
+    }
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    if (monitorType === 'process') {
+        if (selectedProcesses.length === 0) {
+            utils.showAlert('请选择至少一个进程', 'warning');
+            return;
+        }
+
+        // 为每个选中的进程创建监控
+        for (const process of selectedProcesses) {
+            const result = await utils.apiRequest('/api/tasks/create', {
+                method: 'POST',
+                body: JSON.stringify({
+                    server_name: serverName,
+                    task_name: selectedProcesses.length > 1 ? `${taskName} (PID: ${process.pid})` : taskName,
+                    monitor_type: 'process',
+                    pid: process.pid,
+                    notify_emails: notifyEmails,
+                    timeout: timeout
+                })
+            });
+
+            if (result.success) successCount++;
+            else failedCount++;
+        }
+    } else {
+        if (selectedGPUs.length === 0) {
+            utils.showAlert('请选择至少一个GPU', 'warning');
+            return;
+        }
+
+        // 为每个选中的GPU创建空闲监听
+        for (const gpuId of selectedGPUs) {
+            const result = await utils.apiRequest('/api/tasks/create', {
+                method: 'POST',
+                body: JSON.stringify({
+                    server_name: serverName,
+                    task_name: selectedGPUs.length > 1 ? `${taskName} (GPU ${gpuId})` : taskName,
+                    monitor_type: 'gpu_idle',
+                    gpu_id: gpuId,
+                    notify_emails: notifyEmails,
+                    timeout: null
+                })
+            });
+
+            if (result.success) successCount++;
+            else failedCount++;
+        }
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById('createTaskModal')).hide();
+
+    if (successCount > 0) {
+        utils.showAlert(`成功创建 ${successCount} 个任务监控${failedCount > 0 ? `，${failedCount} 个失败` : ''}`, 'success');
+        loadTasks();
+    } else {
+        utils.showAlert('创建任务监控失败', 'danger');
+    }
+}
+
+async function loadTasks() {
+    const container = document.getElementById('tasksContainer');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
+    const result = await utils.apiRequest('/api/tasks');
+
+    if (!result.success || result.tasks.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-info text-center">
+                <i class="bi bi-info-circle"></i>
+                <h5>暂无监控任务</h5>
+                <p>点击"新建任务监控"按钮开始监控 GPU 任务或空闲GPU</p>
+            </div>
+        `;
+        return;
+    }
+
+    const html = `
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>类型</th>
+                        <th>任务名称</th>
+                        <th>服务器</th>
+                        <th>监控目标</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th>完成时间</th>
+                        <th>通知邮箱</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${result.tasks.map(t => `
+                        <tr>
+                            <td>
+                                ${t.monitor_type === 'process'
+                                    ? '<span class="badge bg-primary"><i class="bi bi-play-circle"></i> 进程</span>'
+                                    : '<span class="badge bg-success"><i class="bi bi-bell"></i> 空卡</span>'}
+                            </td>
+                            <td><strong>${t.task_name}</strong></td>
+                            <td><span class="badge bg-secondary">${t.server_name}</span></td>
+                            <td>
+                                ${t.monitor_type === 'process'
+                                    ? `<code>PID ${t.pid}</code>`
+                                    : `<span class="badge bg-info">GPU ${t.gpu_id}</span>`}
+                            </td>
+                            <td>
+                                <span class="badge ${
+                                    t.status === 'running' ? 'bg-primary' :
+                                    t.status === 'completed' ? 'bg-success' :
+                                    'bg-warning'
+                                }">
+                                    <i class="bi bi-${
+                                        t.status === 'running' ? 'play-circle' :
+                                        t.status === 'completed' ? 'check-circle' :
+                                        'exclamation-circle'
+                                    }"></i>
+                                    ${t.status === 'running' ? '运行中' : t.status === 'completed' ? '已完成' : '超时'}
+                                </span>
+                            </td>
+                            <td><small>${new Date(t.created_at).toLocaleString()}</small></td>
+                            <td><small>${t.completed_at ? new Date(t.completed_at).toLocaleString() : '-'}</small></td>
+                            <td>
+                                ${t.notify_emails.length > 0
+                                    ? `<span class="badge bg-info"><i class="bi bi-envelope"></i> ${t.notify_emails.length} 个</span>`
+                                    : '<span class="text-muted">-</span>'}
+                            </td>
+                            <td>
+                                ${t.status === 'running' ? `
+                                    <button class="btn btn-sm btn-warning" onclick='editTask(${JSON.stringify(t)})'>
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                ` : ''}
+                                <button class="btn btn-sm btn-danger" onclick="deleteTask('${t.task_id}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function editTask(task) {
+    document.getElementById('editTaskId').value = task.task_id;
+    document.getElementById('editTaskName').value = task.task_name;
+    document.getElementById('editNotifyEmails').value = task.notify_emails.join(', ');
+    document.getElementById('editTaskTimeout').value = task.timeout || '';
+
+    new bootstrap.Modal(document.getElementById('editTaskModal')).show();
+}
+
+async function saveTaskEdit() {
+    const taskId = document.getElementById('editTaskId').value;
+    const taskName = document.getElementById('editTaskName').value.trim();
+    const emailsStr = document.getElementById('editNotifyEmails').value.trim();
+    const timeoutStr = document.getElementById('editTaskTimeout').value.trim();
+
+    const notifyEmails = emailsStr ? emailsStr.split(',').map(e => e.trim()).filter(e => e) : [];
+    const timeout = timeoutStr ? parseInt(timeoutStr) : null;
+
+    const result = await utils.apiRequest(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+            task_name: taskName,
+            notify_emails: notifyEmails,
+            timeout: timeout
+        })
+    });
+
+    if (result.success) {
+        bootstrap.Modal.getInstance(document.getElementById('editTaskModal')).hide();
+        utils.showAlert('任务已更新', 'success');
+        loadTasks();
+    } else {
+        utils.showAlert(result.error, 'danger');
+    }
+}
+
+async function deleteTask(taskId) {
+    if (!confirm('确定要删除此任务监控吗？')) return;
+
+    const result = await utils.apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' });
+
+    if (result.success) {
+        utils.showAlert(result.message, 'success');
+        loadTasks();
+    } else {
+        utils.showAlert(result.error, 'danger');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadServers();
+    loadTasks();
+    loadUserPrefs();
+
+    // 每30秒自动刷新
+    setInterval(loadTasks, 30000);
+});
+</script>
+{% endblock %}

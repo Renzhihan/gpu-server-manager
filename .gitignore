@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.env
+*.log
+logs/
+data/user_prefs.json
+ssl/
+flask_session/
+config/servers.yaml  # 包含敏感信息，使用 servers.yaml.example 作为模板
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+
+# Temporary files
+*.tmp
+*.bak
+.cache/

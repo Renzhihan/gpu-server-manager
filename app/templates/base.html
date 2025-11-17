@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}GPU 服务器管理系统{% endblock %}</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+        }
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 0.75rem 1rem;
+            margin: 0.2rem 0;
+            border-radius: 0.25rem;
+            transition: all 0.3s;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: #fff;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .sidebar .nav-link i {
+            margin-right: 0.5rem;
+        }
+        .card {
+            border: none;
+            border-radius: 0.5rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        .server-card {
+            cursor: pointer;
+        }
+        .gpu-progress {
+            height: 1.5rem;
+            border-radius: 0.5rem;
+        }
+        .status-badge {
+            padding: 0.35rem 0.65rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .navbar-brand {
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+    </style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 侧边栏 -->
+            <nav class="col-md-2 d-md-block sidebar p-3">
+                <div class="text-center mb-4">
+                    <h4 class="text-white">
+                        <i class="bi bi-hdd-rack"></i>
+                        GPU 服务器
+                    </h4>
+                    <small class="text-white-50">管理系统</small>
+                    <div class="mt-2">
+                        {% if session.role == 'admin' %}
+                        <span class="badge bg-danger">
+                            <i class="bi bi-shield-lock"></i> 管理员
+                        </span>
+                        {% else %}
+                        <span class="badge bg-success">
+                            <i class="bi bi-person"></i> 用户
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/">
+                            <i class="bi bi-speedometer2"></i>仪表盘
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/servers' %}active{% endif %}" href="/servers">
+                            <i class="bi bi-server"></i>服务器管理
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/gpu-monitor' %}active{% endif %}" href="/gpu-monitor">
+                            <i class="bi bi-gpu-card"></i>GPU 监控
+                        </a>
+                    </li>
+
+                    {% if session.role == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/docker' %}active{% endif %}" href="/docker">
+                            <i class="bi bi-box"></i>Docker 管理
+                            <span class="badge bg-danger ms-1">仅管理员</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/users' %}active{% endif %}" href="/users">
+                            <i class="bi bi-people"></i>用户管理
+                            <span class="badge bg-danger ms-1">仅管理员</span>
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/files' %}active{% endif %}" href="/files">
+                            <i class="bi bi-folder"></i>文件管理
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/tasks' %}active{% endif %}" href="/tasks">
+                            <i class="bi bi-list-task"></i>任务监控
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/port-forward' %}active{% endif %}" href="/port-forward">
+                            <i class="bi bi-arrow-left-right"></i>端口转发
+                        </a>
+                    </li>
+
+                    <li class="nav-item mt-3">
+                        <a class="nav-link text-danger" href="/logout">
+                            <i class="bi bi-box-arrow-right"></i>退出登录
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <!-- 主内容区 -->
+            <main class="col-md-10 ms-sm-auto px-md-4">
+                <div class="pt-3 pb-2 mb-3 border-bottom">
+                    <h2>{% block page_title %}仪表盘{% endblock %}</h2>
+                </div>
+
+                <!-- 消息提示区域 -->
+                <div id="alertContainer"></div>
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- 全局密码验证模态框 -->
+    <div class="modal fade" id="passwordVerifyModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-shield-lock"></i> 安全验证</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>危险操作！</strong> 此操作不可撤销，请输入管理员密码确认。
+                    </div>
+                    <div class="mb-3">
+                        <label for="adminPassword" class="form-label">管理员密码</label>
+                        <input type="password" class="form-control" id="adminPassword" placeholder="请输入密码">
+                    </div>
+                    <div id="passwordError" class="text-danger" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" id="confirmDangerousAction">
+                        <i class="bi bi-check-circle"></i> 确认执行
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // 全局工具函数
+        const utils = {
+            // 显示提示消息
+            showAlert(message, type = 'info') {
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+                alertDiv.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.getElementById('alertContainer').appendChild(alertDiv);
+
+                // 3秒后自动关闭
+                setTimeout(() => {
+                    alertDiv.remove();
+                }, 3000);
+            },
+
+            // API 请求封装
+            async apiRequest(url, options = {}) {
+                try {
+                    const response = await fetch(url, {
+                        ...options,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...options.headers
+                        }
+                    });
+                    const data = await response.json();
+                    return data;
+                } catch (error) {
+                    console.error('API 请求失败:', error);
+                    this.showAlert('网络请求失败: ' + error.message, 'danger');
+                    return { success: false, error: error.message };
+                }
+            },
+
+            // 格式化字节
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+            },
+
+            // 危险操作确认（需要密码验证）
+            dangerousActionCallback: null,
+
+            async requirePasswordForDangerousAction(callback) {
+                this.dangerousActionCallback = callback;
+                document.getElementById('adminPassword').value = '';
+                document.getElementById('passwordError').style.display = 'none';
+                new bootstrap.Modal(document.getElementById('passwordVerifyModal')).show();
+            },
+
+            // 加载用户偏好设置
+            async loadUserPrefs() {
+                const result = await this.apiRequest('/api/prefs');
+                return result.success ? result.prefs : {};
+            },
+
+            // 保存用户偏好设置
+            async saveUserPrefs(prefs) {
+                return await this.apiRequest('/api/prefs', {
+                    method: 'POST',
+                    body: JSON.stringify(prefs)
+                });
+            }
+        };
+
+        // 密码验证确认按钮事件
+        document.getElementById('confirmDangerousAction').addEventListener('click', async () => {
+            const password = document.getElementById('adminPassword').value;
+            if (!password) {
+                document.getElementById('passwordError').textContent = '请输入密码';
+                document.getElementById('passwordError').style.display = 'block';
+                return;
+            }
+
+            // 验证密码
+            const result = await utils.apiRequest('/api/auth/verify', {
+                method: 'POST',
+                body: JSON.stringify({ password: password })
+            });
+
+            if (result.success) {
+                bootstrap.Modal.getInstance(document.getElementById('passwordVerifyModal')).hide();
+                if (utils.dangerousActionCallback) {
+                    utils.dangerousActionCallback();
+                    utils.dangerousActionCallback = null;
+                }
+            } else {
+                document.getElementById('passwordError').textContent = '密码错误，请重试';
+                document.getElementById('passwordError').style.display = 'block';
+            }
+        });
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

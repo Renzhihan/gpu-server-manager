@@ -1,0 +1,37 @@
+# GPU 服务器配置示例
+# 格式说明：
+# - name: 服务器名称（显示用）
+# - host: IP地址或域名
+# - port: SSH端口（默认22）
+# - username: SSH登录用户名
+# - password: SSH密码（或使用key_file）
+# - key_file: SSH私钥路径（可选，优先于密码）
+# - gpu_enabled: 是否为GPU服务器
+# - description: 服务器描述（用于区分2080ti服务器，影响Docker命令选择）
+
+servers:
+  - name: "GPU Server 1"
+    host: "YOUR_SERVER_IP_1"
+    port: 22
+    username: "YOUR_USERNAME"
+    password: "YOUR_PASSWORD"
+    # key_file: "/path/to/private/key"  # 使用密钥认证时取消注释
+    gpu_enabled: true
+    description: "RTX 3090"  # 描述中包含"2080"会自动使用nvidia-docker命令
+
+  - name: "GPU Server 2"
+    host: "YOUR_SERVER_IP_2"
+    port: 22
+    username: "YOUR_USERNAME"
+    password: "YOUR_PASSWORD"
+    gpu_enabled: true
+    description: "RTX 2080ti"  # 包含"2080"将使用nvidia-docker而非docker
+
+  # 添加更多服务器...
+  # - name: "CPU Server 1"
+  #   host: "192.168.1.100"
+  #   port: 22
+  #   username: "admin"
+  #   key_file: "/root/.ssh/id_rsa"
+  #   gpu_enabled: false
+  #   description: "CPU only server"

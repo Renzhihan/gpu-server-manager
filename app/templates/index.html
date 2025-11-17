@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}仪表盘 - GPU 服务器管理系统{% endblock %}
+{% block page_title %}仪表盘{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <!-- 服务器统计卡片 -->
+    <div class="col-md-3 mb-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">服务器总数</h6>
+                        <h2 class="mt-2 mb-0" id="serverCount">-</h2>
+                    </div>
+                    <i class="bi bi-server" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">运行中任务</h6>
+                        <h2 class="mt-2 mb-0" id="taskCount">-</h2>
+                    </div>
+                    <i class="bi bi-list-task" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">GPU 总数</h6>
+                        <h2 class="mt-2 mb-0" id="gpuCount">-</h2>
+                    </div>
+                    <i class="bi bi-gpu-card" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">容器数量</h6>
+                        <h2 class="mt-2 mb-0" id="containerCount">-</h2>
+                    </div>
+                    <i class="bi bi-box" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 服务器列表 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-server"></i> 服务器列表</h5>
+                <button class="btn btn-sm btn-primary" onclick="loadDashboard()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="serversContainer" class="row">
+                    <div class="col-12 text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">加载中...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let servers = [];
+
+async function loadDashboard() {
+    // 加载服务器列表
+    const result = await utils.apiRequest('/api/servers');
+    if (result.success) {
+        servers = result.servers;
+        document.getElementById('serverCount').textContent = servers.length;
+        renderServers();
+
+        // 统计GPU总数
+        let totalGPUs = 0;
+        for (const server of servers) {
+            if (server.gpu_enabled) {
+                const gpuResult = await utils.apiRequest(`/api/gpu/${server.name}`);
+                if (gpuResult.success) {
+                    totalGPUs += gpuResult.gpus.length;
+                }
+            }
+        }
+        document.getElementById('gpuCount').textContent = totalGPUs;
+    }
+
+    // 加载任务统计
+    const taskResult = await utils.apiRequest('/api/tasks');
+    if (taskResult.success) {
+        const runningTasks = taskResult.tasks.filter(t => t.status === 'running').length;
+        document.getElementById('taskCount').textContent = runningTasks;
+    }
+
+    // 统计容器数量（仅第一个服务器）
+    if (servers.length > 0) {
+        const containerResult = await utils.apiRequest(`/api/docker/${servers[0].name}/containers`);
+        if (containerResult.success) {
+            document.getElementById('containerCount').textContent = containerResult.containers.length;
+        }
+    }
+}
+
+function renderServers() {
+    const container = document.getElementById('serversContainer');
+    if (servers.length === 0) {
+        container.innerHTML = '<div class="col-12 text-center text-muted">暂无服务器配置</div>';
+        return;
+    }
+
+    container.innerHTML = servers.map(server => `
+        <div class="col-md-4 mb-3">
+            <div class="card server-card" onclick="viewServer('${server.name}')">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-${server.gpu_enabled ? 'gpu-card text-success' : 'server text-primary'}"></i>
+                        ${server.name}
+                    </h5>
+                    <p class="card-text text-muted mb-2">
+                        <small><i class="bi bi-hdd-network"></i> ${server.host}:${server.port}</small>
+                    </p>
+                    <p class="card-text">${server.description || '无描述'}</p>
+                    ${server.gpu_enabled ? '<span class="badge bg-success">GPU 服务器</span>' : ''}
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function viewServer(serverName) {
+    window.location.href = `/servers?selected=${serverName}`;
+}
+
+// 页面加载时执行
+document.addEventListener('DOMContentLoaded', () => {
+    loadDashboard();
+
+    // 每30秒自动刷新
+    setInterval(loadDashboard, 30000);
+});
+</script>
+{% endblock %}

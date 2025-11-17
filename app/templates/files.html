@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}文件管理 - GPU 服务器管理系统{% endblock %}
+{% block page_title %}文件管理{% endblock %}
+
+{% block content %}
+<div class="alert alert-warning">
+    <i class="bi bi-shield-exclamation"></i>
+    <strong>只读模式：</strong> 文件管理仅支持浏览和下载，不允许修改、删除等危险操作。
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <select class="form-select" id="serverSelect" onchange="onServerChange()">
+            <option value="">请选择服务器...</option>
+        </select>
+    </div>
+    <div class="col-md-8 text-end">
+        <button class="btn btn-info" onclick="viewDiskUsage()">
+            <i class="bi bi-hdd"></i> 磁盘使用
+        </button>
+    </div>
+</div>
+
+<!-- 快捷路径 -->
+<div class="mb-3" id="quickPaths" style="display:none;">
+    <div class="btn-group" role="group">
+        <button class="btn btn-sm btn-outline-primary" onclick="browsePath('/')">
+            <i class="bi bi-house"></i> 根目录
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="browsePath('/home')">
+            <i class="bi bi-person"></i> /home
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="browsePath('/tmp')">
+            <i class="bi bi-folder"></i> /tmp
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="browsePath('/data')" id="dataBtn">
+            <i class="bi bi-database"></i> /data
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="browsePath('/mnt')" id="mntBtn">
+            <i class="bi bi-hdd"></i> /mnt
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <div class="d-flex justify-content-between align-items-center flex-wrap">
+            <!-- 面包屑导航 -->
+            <nav aria-label="breadcrumb" class="mb-2 mb-md-0">
+                <ol class="breadcrumb mb-0" id="breadcrumb">
+                    <li class="breadcrumb-item"><a href="#" onclick="browsePath('/'); return false;"><i class="bi bi-house"></i></a></li>
+                </ol>
+            </nav>
+            <button class="btn btn-sm btn-secondary" onclick="browsePath('..')">
+                <i class="bi bi-arrow-up"></i> 上级
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="filesContainer">
+            <div class="alert alert-info">请选择服务器</div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建目录功能已移除，仅支持只读操作 -->
+
+<!-- 文件预览 Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-eye"></i> 文件预览: <span id="previewFileName"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="previewContent" style="max-height: 500px; overflow-y: auto;">
+                    <div class="text-center"><div class="spinner-border"></div> 加载中...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="downloadCurrentPreview()">
+                    <i class="bi bi-download"></i> 下载此文件
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedServer = null;
+let currentPath = '/';
+let pathMemory = {};  // 记录每个服务器的最后路径
+
+async function loadServers() {
+    const result = await utils.apiRequest('/api/servers');
+    if (result.success) {
+        const select = document.getElementById('serverSelect');
+        select.innerHTML = '<option value="">请选择服务器...</option>' +
+            result.servers.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+
+        // 加载路径记忆
+        await loadPathMemory();
+    }
+}
+
+async function loadPathMemory() {
+    const prefs = await utils.loadUserPrefs();
+    if (prefs.file_paths) {
+        pathMemory = prefs.file_paths;
+    }
+}
+
+async function savePathMemory() {
+    const prefs = await utils.loadUserPrefs();
+    prefs.file_paths = pathMemory;
+    await utils.saveUserPrefs(prefs);
+}
+
+async function onServerChange() {
+    selectedServer = document.getElementById('serverSelect').value;
+    if (!selectedServer) {
+        document.getElementById('quickPaths').style.display = 'none';
+        return;
+    }
+
+    document.getElementById('quickPaths').style.display = 'block';
+
+    // 从记忆中恢复上次访问的路径
+    const lastPath = pathMemory[selectedServer] || '/';
+    await browsePath(lastPath);
+}
+
+function updateBreadcrumb(path) {
+    const breadcrumb = document.getElementById('breadcrumb');
+    const parts = path.split('/').filter(p => p);
+
+    let html = '<li class="breadcrumb-item"><a href="#" onclick="browsePath(\'/\'); return false;"><i class="bi bi-house"></i></a></li>';
+
+    let accumulatedPath = '';
+    parts.forEach((part, index) => {
+        accumulatedPath += '/' + part;
+        const currentPath = accumulatedPath;
+        const isLast = index === parts.length - 1;
+
+        if (isLast) {
+            html += `<li class="breadcrumb-item active">${part}</li>`;
+        } else {
+            html += `<li class="breadcrumb-item"><a href="#" onclick="browsePath('${currentPath}'); return false;">${part}</a></li>`;
+        }
+    });
+
+    breadcrumb.innerHTML = html;
+}
+
+async function browsePath(path) {
+    selectedServer = document.getElementById('serverSelect').value;
+    if (!selectedServer) return;
+
+    if (path === '..') {
+        // 上级目录
+        const parts = currentPath.split('/').filter(p => p);
+        parts.pop();
+        path = '/' + parts.join('/');
+    } else if (!path.startsWith('/')) {
+        // 相对路径
+        path = currentPath + (currentPath.endsWith('/') ? '' : '/') + path;
+    }
+
+    currentPath = path || '/';
+
+    // 保存路径到记忆
+    pathMemory[selectedServer] = currentPath;
+    await savePathMemory();
+
+    // 更新面包屑导航
+    updateBreadcrumb(currentPath);
+
+    const container = document.getElementById('filesContainer');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
+    const result = await utils.apiRequest(`/api/files/${selectedServer}/list?path=${encodeURIComponent(currentPath)}`);
+
+    if (!result.success) {
+        container.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        return;
+    }
+
+    if (result.files.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">目录为空</div>';
+        return;
+    }
+
+    const html = `
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>大小</th>
+                    <th>修改时间</th>
+                    <th>权限</th>
+                    <th>所有者</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${result.files.map(f => `
+                    <tr>
+                        <td ${f.is_dir ? 'style="cursor: pointer;"' : ''} ${f.is_dir ? `onclick="browsePath('${f.name}')"` : ''}>
+                            <i class="bi bi-${f.is_dir ? 'folder-fill text-warning' : 'file-earmark text-secondary'}"></i>
+                            ${f.name}
+                        </td>
+                        <td>${f.is_dir ? '-' : f.size}</td>
+                        <td>${f.date}</td>
+                        <td><code>${f.permissions}</code></td>
+                        <td>${f.owner}:${f.group}</td>
+                        <td>
+                            ${!f.is_dir ? `
+                                <button class="btn btn-sm btn-outline-info" onclick="previewFile('${f.name}')">
+                                    <i class="bi bi-eye"></i> 预览
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary" onclick="downloadFile('${f.name}')">
+                                    <i class="bi bi-download"></i> 下载
+                                </button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    container.innerHTML = html;
+}
+
+async function downloadFile(filename) {
+    const fullPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + filename;
+
+    utils.showAlert('正在准备下载...', 'info');
+
+    // 直接打开下载链接
+    const downloadUrl = `/api/files/${selectedServer}/download?path=${encodeURIComponent(fullPath)}`;
+    window.open(downloadUrl, '_blank');
+}
+
+// 危险操作已移除：showCreateDirModal() 和 createDirectory()
+
+let currentPreviewFile = '';
+
+async function previewFile(filename) {
+    currentPreviewFile = filename;
+    const fullPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + filename;
+
+    document.getElementById('previewFileName').textContent = filename;
+    document.getElementById('previewContent').innerHTML = '<div class="text-center"><div class="spinner-border"></div> 加载中...</div>';
+
+    new bootstrap.Modal(document.getElementById('previewModal')).show();
+
+    // 使用head命令读取文件前1000行
+    const command = `head -n 1000 '${fullPath}' 2>&1`;
+    const result = await utils.apiRequest(`/api/servers/${selectedServer}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ command: command })
+    });
+
+    const container = document.getElementById('previewContent');
+
+    if (result.success) {
+        const content = result.stdout || result.stderr;
+        if (content.trim()) {
+            container.innerHTML = `<pre style="background-color: #f5f5f5; padding: 1rem; border-radius: 0.25rem; font-family: 'Courier New', monospace; font-size: 0.875rem;">${escapeHtml(content)}</pre>`;
+        } else {
+            container.innerHTML = '<div class="alert alert-info">文件为空</div>';
+        }
+    } else {
+        container.innerHTML = `<div class="alert alert-danger">预览失败: ${result.stderr || '无法读取文件'}</div>`;
+    }
+}
+
+function downloadCurrentPreview() {
+    if (currentPreviewFile) {
+        bootstrap.Modal.getInstance(document.getElementById('previewModal')).hide();
+        downloadFile(currentPreviewFile);
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function viewDiskUsage() {
+    if (!selectedServer) {
+        utils.showAlert('请先选择服务器', 'warning');
+        return;
+    }
+
+    const result = await utils.apiRequest(`/api/files/${selectedServer}/disk`);
+
+    if (result.success) {
+        const html = result.disks.map(d => `
+            <div class="mb-2">
+                <div class="d-flex justify-content-between">
+                    <span><strong>${d.mounted}</strong> (${d.filesystem})</span>
+                    <span>${d.used} / ${d.size} (${d.use_percent})</span>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar ${parseInt(d.use_percent) > 80 ? 'bg-danger' : 'bg-success'}"
+                         style="width: ${d.use_percent}"></div>
+                </div>
+            </div>
+        `).join('');
+
+        utils.showAlert(`<strong>磁盘使用情况:</strong><br>${html}`, 'info');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadServers();
+});
+</script>
+{% endblock %}

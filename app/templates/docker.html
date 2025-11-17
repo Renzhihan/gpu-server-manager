@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Docker 管理 - GPU 服务器管理系统{% endblock %}
+{% block page_title %}Docker 管理{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-md-6">
+        <select class="form-select" id="serverSelect" onchange="loadDockerInfo()">
+            <option value="">请选择服务器...</option>
+        </select>
+    </div>
+    <div class="col-md-6 text-end">
+        <button class="btn btn-primary" onclick="loadDockerInfo()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<!-- 容器管理 -->
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-box"></i> 容器列表</h5>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="showAllContainers" onchange="loadDockerInfo()">
+            <label class="form-check-label" for="showAllContainers">显示所有容器</label>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="containersContainer">
+            <div class="alert alert-info">请选择一个服务器</div>
+        </div>
+    </div>
+</div>
+
+<!-- 镜像管理 -->
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-layers"></i> 镜像列表</h5>
+        <button class="btn btn-sm btn-success" onclick="showPullImageModal()">
+            <i class="bi bi-download"></i> 拉取镜像
+        </button>
+    </div>
+    <div class="card-body">
+        <div id="imagesContainer">
+            <div class="alert alert-info">请选择一个服务器</div>
+        </div>
+    </div>
+</div>
+
+<!-- 拉取镜像 Modal -->
+<div class="modal fade" id="pullImageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">拉取 Docker 镜像</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="imageName" class="form-label">镜像名称</label>
+                    <input type="text" class="form-control" id="imageName" placeholder="例如: nvidia/cuda:11.8.0-base">
+                    <div class="form-text">格式: repository[:tag]</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="pullImage()">拉取</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 容器日志 Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">容器日志</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="logsContent" style="background: #f8f9fa; padding: 1rem; max-height: 500px; overflow-y: auto;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedServer = null;
+
+async function loadServers() {
+    const result = await utils.apiRequest('/api/servers');
+    if (result.success) {
+        const select = document.getElementById('serverSelect');
+        select.innerHTML = '<option value="">请选择服务器...</option>' +
+            result.servers.map(s => `<option value="${s.name}">${s.name} (${s.host})</option>`).join('');
+    }
+}
+
+async function loadDockerInfo() {
+    selectedServer = document.getElementById('serverSelect').value;
+    if (!selectedServer) return;
+
+    await loadContainers();
+    await loadImages();
+}
+
+async function loadContainers() {
+    const showAll = document.getElementById('showAllContainers').checked;
+    const container = document.getElementById('containersContainer');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
+    const result = await utils.apiRequest(`/api/docker/${selectedServer}/containers?all=${showAll}`);
+
+    if (!result.success) {
+        container.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        return;
+    }
+
+    if (result.containers.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">没有容器</div>';
+        return;
+    }
+
+    const html = `
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>容器 ID</th>
+                    <th>名称</th>
+                    <th>镜像</th>
+                    <th>状态</th>
+                    <th>端口</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${result.containers.map(c => `
+                    <tr>
+                        <td><code>${c.id.substring(0, 12)}</code></td>
+                        <td>${c.name}</td>
+                        <td>${c.image}</td>
+                        <td><span class="badge ${c.state === 'running' ? 'bg-success' : 'bg-secondary'}">${c.status}</span></td>
+                        <td>${c.ports || '-'}</td>
+                        <td>
+                            ${c.state === 'running' ? `
+                                <button class="btn btn-sm btn-warning" onclick="containerAction('${c.id}', 'stop')">停止</button>
+                                <button class="btn btn-sm btn-info" onclick="containerAction('${c.id}', 'restart')">重启</button>
+                                <button class="btn btn-sm btn-secondary" onclick="viewLogs('${c.id}')">日志</button>
+                            ` : `
+                                <button class="btn btn-sm btn-success" onclick="containerAction('${c.id}', 'start')">启动</button>
+                                <button class="btn btn-sm btn-danger" onclick="containerAction('${c.id}', 'rm')">删除</button>
+                            `}
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    container.innerHTML = html;
+}
+
+async function loadImages() {
+    const container = document.getElementById('imagesContainer');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
+    const result = await utils.apiRequest(`/api/docker/${selectedServer}/images`);
+
+    if (!result.success) {
+        container.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        return;
+    }
+
+    if (result.images.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">没有镜像</div>';
+        return;
+    }
+
+    const html = `
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>镜像 ID</th>
+                    <th>仓库</th>
+                    <th>标签</th>
+                    <th>大小</th>
+                    <th>创建时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${result.images.map(img => `
+                    <tr>
+                        <td><code>${img.id.substring(0, 12)}</code></td>
+                        <td>${img.repository}</td>
+                        <td>${img.tag}</td>
+                        <td>${img.size}</td>
+                        <td>${img.created}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    container.innerHTML = html;
+}
+
+async function containerAction(containerId, action) {
+    const actionText = {start: '启动', stop: '停止', restart: '重启', rm: '删除'}[action];
+
+    if (action === 'rm' && !confirm(`确定要删除容器 ${containerId} 吗？`)) {
+        return;
+    }
+
+    const result = await utils.apiRequest(`/api/docker/${selectedServer}/containers/${containerId}/${action}`, {
+        method: 'POST'
+    });
+
+    if (result.success) {
+        utils.showAlert(result.message, 'success');
+        loadContainers();
+    } else {
+        utils.showAlert(result.error, 'danger');
+    }
+}
+
+function showPullImageModal() {
+    if (!selectedServer) {
+        utils.showAlert('请先选择服务器', 'warning');
+        return;
+    }
+    new bootstrap.Modal(document.getElementById('pullImageModal')).show();
+}
+
+async function pullImage() {
+    const imageName = document.getElementById('imageName').value.trim();
+    if (!imageName) {
+        utils.showAlert('请输入镜像名称', 'warning');
+        return;
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById('pullImageModal')).hide();
+    utils.showAlert('正在拉取镜像，请稍候...', 'info');
+
+    const result = await utils.apiRequest(`/api/docker/${selectedServer}/images/pull`, {
+        method: 'POST',
+        body: JSON.stringify({ image_name: imageName })
+    });
+
+    if (result.success) {
+        utils.showAlert('镜像拉取成功', 'success');
+        loadImages();
+    } else {
+        utils.showAlert(result.error, 'danger');
+    }
+}
+
+async function viewLogs(containerId) {
+    const modal = new bootstrap.Modal(document.getElementById('logsModal'));
+    modal.show();
+
+    document.getElementById('logsContent').textContent = '加载中...';
+
+    const result = await utils.apiRequest(`/api/docker/${selectedServer}/containers/${containerId}/logs?tail=200`);
+
+    if (result.success) {
+        document.getElementById('logsContent').textContent = result.logs || '(空日志)';
+    } else {
+        document.getElementById('logsContent').textContent = `错误: ${result.error}`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadServers();
+});
+</script>
+{% endblock %}

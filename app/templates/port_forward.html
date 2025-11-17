@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block title %}端口转发 - GPU 服务器管理系统{% endblock %}
+{% block page_title %}端口转发管理{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    <strong>端口转发说明：</strong> 将远程服务器上的端口映射到本地，方便访问 TensorBoard、MLflow、Jupyter 等可视化工具。
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <button class="btn btn-success" onclick="showCreateForwardModal()">
+            <i class="bi bi-plus-circle"></i> 新建端口转发
+        </button>
+    </div>
+    <div class="col-md-6 text-end">
+        <button class="btn btn-primary" onclick="loadForwards()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<!-- 转发列表 -->
+<div class="card">
+    <div class="card-body">
+        <div id="forwardsContainer">
+            <div class="text-center"><div class="spinner-border"></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建转发 Modal -->
+<div class="modal fade" id="createForwardModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-arrow-left-right"></i> 创建端口转发</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 快捷选择常用工具 -->
+                <h6 class="mb-3"><i class="bi bi-star"></i> 常用工具</h6>
+                <div class="row mb-4" id="toolSuggestions">
+                    <div class="text-center"><div class="spinner-border spinner-border-sm"></div> 加载中...</div>
+                </div>
+
+                <!-- 自定义配置 -->
+                <h6 class="mb-3"><i class="bi bi-gear"></i> 自定义配置</h6>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="forwardServer" class="form-label">服务器 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="forwardServer">
+                            <option value="">请选择服务器...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="forwardName" class="form-label">名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="forwardName" placeholder="例如: TensorBoard">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="remotePort" class="form-label">远程端口 <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="remotePort" placeholder="例如: 6006">
+                        <div class="form-text">服务器上运行服务的端口号</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="localPort" class="form-label">本地端口 <span class="badge bg-secondary">可选</span></label>
+                        <input type="number" class="form-control" id="localPort" placeholder="留空自动分配">
+                        <div class="form-text">本机访问的端口号</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-success" onclick="createForward()">
+                    <i class="bi bi-check-circle"></i> 创建转发
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedToolType = 'custom';
+
+async function loadServers() {
+    const result = await utils.apiRequest('/api/servers');
+    if (result.success) {
+        const select = document.getElementById('forwardServer');
+        select.innerHTML = '<option value="">请选择服务器...</option>' +
+            result.servers.map(s => `<option value="${s.name}">${s.name} (${s.host})</option>`).join('');
+    }
+}
+
+async function loadToolSuggestions() {
+    const result = await utils.apiRequest('/api/forwards/tools');
+    if (!result.success) return;
+
+    const container = document.getElementById('toolSuggestions');
+    container.innerHTML = result.tools.map(tool => `
+        <div class="col-md-4 mb-2">
+            <div class="card tool-card" onclick="selectTool('${tool.type}', '${tool.name}', ${tool.default_port})" style="cursor: pointer;">
+                <div class="card-body text-center p-2">
+                    <i class="bi bi-${tool.icon}" style="font-size: 2rem; color: #0d6efd;"></i>
+                    <h6 class="mt-2 mb-0">${tool.name}</h6>
+                    <small class="text-muted">${tool.description}</small>
+                    <div class="mt-1"><code>:${tool.default_port}</code></div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function selectTool(type, name, port) {
+    selectedToolType = type;
+    document.getElementById('forwardName').value = name;
+    document.getElementById('remotePort').value = port;
+
+    // 高亮选中的工具
+    document.querySelectorAll('.tool-card').forEach(card => {
+        card.classList.remove('border-primary');
+    });
+    event.currentTarget.classList.add('border-primary');
+}
+
+async function loadForwards() {
+    const container = document.getElementById('forwardsContainer');
+    container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
+    const result = await utils.apiRequest('/api/forwards');
+
+    if (!result.success || result.forwards.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-info text-center">
+                <i class="bi bi-info-circle"></i>
+                <h5>暂无端口转发</h5>
+                <p>点击"新建端口转发"按钮创建</p>
+            </div>
+        `;
+        return;
+    }
+
+    const html = `
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>类型</th>
+                        <th>名称</th>
+                        <th>服务器</th>
+                        <th>端口映射</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${result.forwards.map(f => `
+                        <tr>
+                            <td>
+                                <span class="badge bg-${getToolColor(f.tool_type)}">
+                                    <i class="bi bi-${getToolIcon(f.tool_type)}"></i>
+                                    ${f.tool_type}
+                                </span>
+                            </td>
+                            <td><strong>${f.name}</strong></td>
+                            <td><span class="badge bg-secondary">${f.server_name}</span></td>
+                            <td>
+                                <code>localhost:${f.local_port}</code>
+                                <i class="bi bi-arrow-left-right"></i>
+                                <code>remote:${f.remote_port}</code>
+                                ${f.status === 'running' ? `
+                                    <a href="http://localhost:${f.local_port}" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                        <i class="bi bi-box-arrow-up-right"></i> 打开
+                                    </a>
+                                ` : ''}
+                            </td>
+                            <td>
+                                <span class="badge ${
+                                    f.status === 'running' ? 'bg-success' :
+                                    f.status === 'error' ? 'bg-danger' :
+                                    f.status === 'starting' ? 'bg-warning' :
+                                    'bg-secondary'
+                                }">
+                                    ${f.status === 'running' ? '运行中' :
+                                      f.status === 'error' ? '错误' :
+                                      f.status === 'starting' ? '启动中' :
+                                      '已停止'}
+                                </span>
+                                ${f.error ? `<br><small class="text-danger">${f.error}</small>` : ''}
+                            </td>
+                            <td><small>${new Date(f.created_at).toLocaleString()}</small></td>
+                            <td>
+                                ${f.status === 'running' ? `
+                                    <button class="btn btn-sm btn-warning" onclick="stopForward('${f.forward_id}')">
+                                        <i class="bi bi-stop-circle"></i> 停止
+                                    </button>
+                                ` : ''}
+                                <button class="btn btn-sm btn-danger" onclick="deleteForward('${f.forward_id}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function getToolColor(type) {
+    const colors = {
+        'tensorboard': 'primary',
+        'mlflow': 'success',
+        'jupyter': 'warning',
+        'wandb': 'info',
+        'visdom': 'danger',
+        'custom': 'secondary'
+    };
+    return colors[type] || 'secondary';
+}
+
+function getToolIcon(type) {
+    const icons = {
+        'tensorboard': 'graph-up',
+        'mlflow': 'bar-chart-line',
+        'jupyter': 'journal-code',
+        'wandb': 'activity',
+        'visdom': 'eye',
+        'custom': 'gear'
+    };
+    return icons[type] || 'gear';
+}
+
+function showCreateForwardModal() {
+    selectedToolType = 'custom';
+    document.getElementById('forwardName').value = '';
+    document.getElementById('remotePort').value = '';
+    document.getElementById('localPort').value = '';
+
+    // 清除工具卡片高亮
+    document.querySelectorAll('.tool-card').forEach(card => {
+        card.classList.remove('border-primary');
+    });
+
+    new bootstrap.Modal(document.getElementById('createForwardModal')).show();
+}
+
+async function createForward() {
+    const serverName = document.getElementById('forwardServer').value;
+    const name = document.getElementById('forwardName').value.trim();
+    const remotePort = document.getElementById('remotePort').value.trim();
+    const localPort = document.getElementById('localPort').value.trim();
+
+    if (!serverName || !name || !remotePort) {
+        utils.showAlert('请填写服务器、名称和远程端口', 'warning');
+        return;
+    }
+
+    const result = await utils.apiRequest('/api/forwards/create', {
+        method: 'POST',
+        body: JSON.stringify({
+            server_name: serverName,
+            name: name,
+            remote_port: parseInt(remotePort),
+            local_port: localPort ? parseInt(localPort) : null,
+            tool_type: selectedToolType
+        })
+    });
+
+    bootstrap.Modal.getInstance(document.getElementById('createForwardModal')).hide();
+
+    if (result.success) {
+        utils.showAlert('端口转发创建成功！', 'success');
+        loadForwards();
+    } else {
+        utils.showAlert(`创建失败: ${result.error}`, 'danger');
+    }
+}
+
+async function stopForward(forwardId) {
+    const result = await utils.apiRequest(`/api/forwards/${forwardId}/stop`, {
+        method: 'POST'
+    });
+
+    if (result.success) {
+        utils.showAlert('端口转发已停止', 'success');
+        loadForwards();
+    } else {
+        utils.showAlert(result.error, 'danger');
+    }
+}
+
+async function deleteForward(forwardId) {
+    if (!confirm('确定要删除此端口转发吗？')) return;
+
+    const result = await utils.apiRequest(`/api/forwards/${forwardId}`, {
+        method: 'DELETE'
+    });
+
+    if (result.success) {
+        utils.showAlert('端口转发已删除', 'success');
+        loadForwards();
+    } else {
+        utils.showAlert(result.error, 'danger');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadServers();
+    loadToolSuggestions();
+    loadForwards();
+
+    // 每10秒自动刷新状态
+    setInterval(loadForwards, 10000);
+});
+</script>
+
+<style>
+.tool-card {
+    transition: all 0.3s;
+}
+.tool-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+}
+</style>
+{% endblock %}

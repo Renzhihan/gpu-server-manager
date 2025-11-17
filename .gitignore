@@ -55,3 +55,12 @@ dist/
 *.tmp
 *.bak
 .cache/
+
+# 开发过程文档（不上传到仓库）
+AUTH_AND_WINDOWS.md
+FILE_USER_UPDATES.md
+HTTPS_PORT_FORWARD.md
+NEW_FEATURES.md
+PACKAGING_GUIDE.md
+QUICK_START.md
+WINDOWS_BUILD.md

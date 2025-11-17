@@ -33,8 +33,6 @@ jobs:
       run: |
         Copy-Item START_WINDOWS.bat dist\GPU-Server-Manager\
         Copy-Item README.md dist\GPU-Server-Manager\
-        Copy-Item WINDOWS_BUILD.md dist\GPU-Server-Manager\
-        Copy-Item AUTH_AND_WINDOWS.md dist\GPU-Server-Manager\
         Copy-Item .env.example dist\GPU-Server-Manager\
 
     - name: 创建发布包
@@ -42,7 +40,7 @@ jobs:
         Compress-Archive -Path dist\GPU-Server-Manager\* -DestinationPath GPU-Server-Manager-Windows.zip
 
     - name: 上传构建产物
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: GPU-Server-Manager-Windows
         path: GPU-Server-Manager-Windows.zip
@@ -57,14 +55,14 @@ jobs:
 
           ### 📦 安装说明
           1. 解压 GPU-Server-Manager-Windows.zip
-          2. 配置 config\servers.yaml
-          3. 双击 START_WINDOWS.bat 启动
-          4. 浏览器访问 http://localhost:5000
+          2. 复制 config\servers.yaml.example 为 config\servers.yaml
+          3. 编辑 config\servers.yaml 填入您的服务器信息
+          4. 双击 START_WINDOWS.bat 启动
+          5. 浏览器访问 http://localhost:5000
 
-          ### 🔑 默认密码
-          管理员密码：GPU-admin@renzhihan-2025
+          ### 🔑 登录认证
+          - **管理员模式**：密码 `GPU-admin@renzhihan-2025`（可修改代码自定义）
+          - **用户模式**：无需密码，只读访问
 
-          ### 📚 文档
-          - [完整文档](README.md)
-          - [Windows使用指南](WINDOWS_BUILD.md)
-          - [认证系统说明](AUTH_AND_WINDOWS.md)
+          ### 📚 完整文档
+          详见仓库 [README.md](https://github.com/Renzhihan/gpu-server-manager/blob/main/README.md)

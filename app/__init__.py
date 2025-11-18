@@ -1,7 +1,11 @@
 from flask import Flask
 from flask_cors import CORS
+from flask_socketio import SocketIO
 from config.settings import config
 import os
+
+# 全局 SocketIO 实例
+socketio = SocketIO()
 
 
 def create_app(config_name=None):
@@ -20,9 +24,16 @@ def create_app(config_name=None):
     # 启用 CORS
     CORS(app)
 
+    # 初始化 SocketIO
+    socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
+
     # 注册蓝图
     from app.routes import main, api
     app.register_blueprint(main.bp)
     app.register_blueprint(api.bp, url_prefix='/api')
+
+    # 注册 SocketIO 事件
+    from app.routes.terminal_events import register_terminal_events
+    register_terminal_events(socketio)
 
     return app

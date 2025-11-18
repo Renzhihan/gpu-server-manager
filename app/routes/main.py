@@ -120,3 +120,10 @@ def tasks():
 def port_forward():
     """端口转发管理页面"""
     return render_template('port_forward.html')
+
+
+@bp.route('/terminal')
+@login_required
+def terminal():
+    """Web SSH 终端页面"""
+    return render_template('terminal.html')

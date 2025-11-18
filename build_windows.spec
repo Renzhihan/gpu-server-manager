@@ -33,13 +33,17 @@ binaries = []
 hiddenimports = [
     'flask',
     'flask_cors',
+    'flask_socketio',
     'paramiko',
     'yaml',
     'dotenv',
     'psutil',
     'apscheduler',
+    'engineio',
+    'socketio',
     'app.routes.main',
     'app.routes.api',
+    'app.routes.terminal_events',
     'app.services.ssh_manager',
     'app.services.gpu_monitor',
     'app.services.docker_manager',
@@ -48,6 +52,7 @@ hiddenimports = [
     'app.services.email_service',
     'app.services.task_monitor',
     'app.services.port_forward',
+    'app.services.terminal_manager',
     'config.settings',
 ]
 

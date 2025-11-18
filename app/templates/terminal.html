@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}Web 终端{% endblock %}
+
+{% block extra_css %}
+<!-- Xterm.js CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<style>
+    .terminal-container {
+        padding: 20px;
+    }
+    .server-selector {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    #terminal {
+        height: calc(100vh - 250px);
+        min-height: 400px;
+        background: #000;
+        border-radius: 4px;
+        padding: 10px;
+    }
+    .terminal-status {
+        margin-top: 10px;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    .status-disconnected {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    .status-connecting {
+        background: #fff3cd;
+        color: #856404;
+    }
+    .status-connected {
+        background: #d4edda;
+        color: #155724;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="terminal-container">
+    <div class="server-selector">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <label for="serverSelect" class="form-label">选择服务器：</label>
+                <select class="form-select" id="serverSelect">
+                    <option value="">-- 请选择服务器 --</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <button class="btn btn-primary" id="connectBtn" disabled>
+                    <i class="bi bi-terminal"></i> 连接终端
+                </button>
+                <button class="btn btn-danger" id="disconnectBtn" style="display: none;">
+                    <i class="bi bi-x-circle"></i> 断开连接
+                </button>
+            </div>
+        </div>
+        <div id="terminalStatus" class="terminal-status status-disconnected" style="display: none;">
+            <i class="bi bi-circle-fill"></i> <span id="statusText">未连接</span>
+        </div>
+    </div>
+
+    <div id="terminal"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Socket.IO -->
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<!-- Xterm.js -->
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+
+<script>
+let socket = null;
+let term = null;
+let fitAddon = null;
+let currentServer = null;
+
+// 初始化 Xterm
+function initTerminal() {
+    term = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: 'Consolas, "Courier New", monospace',
+        theme: {
+            background: '#1e1e1e',
+            foreground: '#d4d4d4',
+            cursor: '#ffffff',
+            selection: '#264f78'
+        },
+        cols: 120,
+        rows: 30
+    });
+
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+
+    term.open(document.getElementById('terminal'));
+    fitAddon.fit();
+
+    // 窗口大小变化时调整终端
+    window.addEventListener('resize', () => {
+        if (term && fitAddon) {
+            fitAddon.fit();
+            if (socket && socket.connected) {
+                socket.emit('terminal_resize', {
+                    cols: term.cols,
+                    rows: term.rows
+                });
+            }
+        }
+    });
+
+    // 处理用户输入
+    term.onData(data => {
+        if (socket && socket.connected) {
+            socket.emit('terminal_input', { data: data });
+        }
+    });
+
+    term.writeln('\x1b[1;36m欢迎使用 GPU Server Manager Web 终端\x1b[0m');
+    term.writeln('\x1b[33m请在上方选择服务器并点击"连接终端"开始使用\x1b[0m');
+    term.writeln('');
+}
+
+// 初始化 Socket.IO
+function initSocket() {
+    socket = io({
+        transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+        console.log('Socket connected');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Socket disconnected');
+        updateStatus('disconnected', '连接断开');
+    });
+
+    socket.on('terminal_ready', (data) => {
+        updateStatus('connected', `已连接到 ${data.server_name}`);
+        document.getElementById('connectBtn').style.display = 'none';
+        document.getElementById('disconnectBtn').style.display = 'inline-block';
+        term.focus();
+    });
+
+    socket.on('terminal_output', (data) => {
+        if (term) {
+            term.write(data.data);
+        }
+    });
+
+    socket.on('terminal_error', (data) => {
+        updateStatus('disconnected', `错误: ${data.error}`);
+        term.writeln(`\r\n\x1b[31m[错误] ${data.error}\x1b[0m\r\n`);
+    });
+}
+
+// 更新状态显示
+function updateStatus(status, text) {
+    const statusDiv = document.getElementById('terminalStatus');
+    const statusText = document.getElementById('statusText');
+
+    statusDiv.style.display = 'block';
+    statusText.textContent = text;
+
+    statusDiv.className = 'terminal-status';
+    if (status === 'connected') {
+        statusDiv.classList.add('status-connected');
+    } else if (status === 'connecting') {
+        statusDiv.classList.add('status-connecting');
+    } else {
+        statusDiv.classList.add('status-disconnected');
+    }
+}
+
+// 加载服务器列表
+async function loadServers() {
+    try {
+        const response = await fetch('/api/servers');
+        const data = await response.json();
+
+        const select = document.getElementById('serverSelect');
+        select.innerHTML = '<option value="">-- 请选择服务器 --</option>';
+
+        data.servers.forEach(server => {
+            const option = document.createElement('option');
+            option.value = server.name;
+            option.textContent = `${server.name} (${server.host})`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('加载服务器列表失败:', error);
+    }
+}
+
+// 连接终端
+function connectTerminal() {
+    const select = document.getElementById('serverSelect');
+    const serverName = select.value;
+
+    if (!serverName) {
+        alert('请先选择服务器');
+        return;
+    }
+
+    currentServer = serverName;
+    term.clear();
+    updateStatus('connecting', `正在连接到 ${serverName}...`);
+
+    socket.emit('create_terminal', { server_name: serverName });
+}
+
+// 断开连接
+function disconnectTerminal() {
+    if (socket) {
+        socket.disconnect();
+        socket.connect();
+    }
+
+    term.clear();
+    term.writeln('\x1b[1;36m连接已断开\x1b[0m');
+    term.writeln('\x1b[33m请选择服务器重新连接\x1b[0m');
+    term.writeln('');
+
+    updateStatus('disconnected', '未连接');
+    document.getElementById('connectBtn').style.display = 'inline-block';
+    document.getElementById('disconnectBtn').style.display = 'none';
+    currentServer = null;
+}
+
+// 页面加载完成
+document.addEventListener('DOMContentLoaded', () => {
+    initTerminal();
+    initSocket();
+    loadServers();
+
+    // 服务器选择变化
+    document.getElementById('serverSelect').addEventListener('change', (e) => {
+        document.getElementById('connectBtn').disabled = !e.target.value;
+    });
+
+    // 连接按钮
+    document.getElementById('connectBtn').addEventListener('click', connectTerminal);
+
+    // 断开按钮
+    document.getElementById('disconnectBtn').addEventListener('click', disconnectTerminal);
+});
+</script>
+{% endblock %}

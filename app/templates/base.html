@@ -137,6 +137,11 @@
                             <i class="bi bi-arrow-left-right"></i>端口转发
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/terminal' %}active{% endif %}" href="/terminal">
+                            <i class="bi bi-terminal"></i>Web 终端
+                        </a>
+                    </li>
 
                     <li class="nav-item mt-3">
                         <a class="nav-link text-danger" href="/logout">

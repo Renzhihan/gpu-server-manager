@@ -1,4 +1,5 @@
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,7 +14,15 @@ class Config:
     DEBUG = FLASK_ENV == 'development'
 
     # 服务器配置文件路径
-    SERVERS_CONFIG = os.path.join(os.path.dirname(__file__), 'servers.yaml')
+    # PyInstaller 打包后优先使用外部配置文件，方便用户修改
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后的环境
+        BASE_DIR = os.path.dirname(sys.executable)
+        SERVERS_CONFIG = os.path.join(BASE_DIR, 'config', 'servers.yaml')
+    else:
+        # 开发环境
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        SERVERS_CONFIG = os.path.join(os.path.dirname(__file__), 'servers.yaml')
 
     # SSH 连接配置
     SSH_TIMEOUT = 10  # 秒

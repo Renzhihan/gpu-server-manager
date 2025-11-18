@@ -4,7 +4,7 @@ from functools import wraps
 bp = Blueprint('main', __name__)
 
 # 管理员密码
-ADMIN_PASSWORD = "GPU-admin@renzhihan-2025"
+ADMIN_PASSWORD = "admin"
 
 
 def login_required(f):

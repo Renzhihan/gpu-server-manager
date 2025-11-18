@@ -108,7 +108,7 @@ SMTP_FROM=your-email@gmail.com
 系统支持两种登录模式：
 
 ### 管理员模式
-- **密码：** `GPU-admin@renzhihan-2025`
+- **密码：** `admin`
 - **权限：** 完整访问权限，包括 Docker 管理和用户管理
 
 ### 用户模式

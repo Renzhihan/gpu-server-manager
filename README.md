@@ -64,8 +64,13 @@ python run.py
 
 1. 从 [Releases](https://github.com/Renzhihan/gpu-server-manager/releases) 下载最新版本的 Windows 打包文件
 2. 解压到任意目录
-3. 编辑 `config/servers.yaml` 配置服务器信息
-4. 双击运行 `GPU-Server-Manager.exe`
+3. 双击运行 `START_WINDOWS.bat` 启动脚本
+   - **首次运行**：会自动创建 `config/servers.yaml` 配置文件模板
+   - 按提示编辑 `config\servers.yaml` 填入服务器信息
+   - 再次运行脚本即可启动
+4. 浏览器访问 http://localhost:5000
+
+**修改配置：** 直接编辑 `config\servers.yaml` 文件（用记事本即可），保存后重启应用生效
 
 ## ⚙️ 配置说明
 

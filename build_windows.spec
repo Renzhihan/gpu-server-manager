@@ -14,7 +14,8 @@ import os
 
 datas = [
     ('app/templates', 'app/templates'),
-    ('config', 'config'),
+    ('config/servers.yaml.example', 'config'),  # 仅打包示例配置,用户可在外部修改
+    ('config/settings.py', 'config'),
 ]
 
 # 只添加存在的文件/目录

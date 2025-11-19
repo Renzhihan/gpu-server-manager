@@ -36,6 +36,7 @@ jobs:
         Copy-Item START_WINDOWS.bat dist\GPU-Server-Manager\
         Copy-Item README.md dist\GPU-Server-Manager\
         Copy-Item .env.example dist\GPU-Server-Manager\
+        New-Item -ItemType Directory -Force -Path dist\GPU-Server-Manager\config
         Copy-Item config\servers.yaml.example dist\GPU-Server-Manager\config\
 
     - name: 上传构建产物（直接上传目录，不额外压缩）

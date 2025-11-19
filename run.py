@@ -9,7 +9,7 @@ import argparse
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app import create_app, socketio
+from app import create_app, socketio, SOCKETIO_AVAILABLE
 from app.services.task_monitor import task_monitor
 
 # 创建 Flask 应用
@@ -51,6 +51,8 @@ if __name__ == '__main__':
             print("   请先运行: ./generate_ssl_cert.sh")
             sys.exit(1)
 
+    terminal_status = "支持 (xterm.js + WebSocket)" if SOCKETIO_AVAILABLE else "不可用 (需安装 Flask-SocketIO)"
+
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║          GPU 服务器管理系统 - 启动成功                        ║
@@ -59,7 +61,7 @@ if __name__ == '__main__':
 ║  运行模式: {'开发模式' if debug else '生产模式':<52}║
 ║  安全传输: {'HTTPS ✅' if use_https else 'HTTP':<52}║
 ║  配置文件: config/servers.yaml                              ║
-║  Web终端: 支持 (xterm.js + WebSocket)                      ║
+║  Web终端: {terminal_status:<51}║
 ╚══════════════════════════════════════════════════════════════╝
     """)
 
@@ -68,18 +70,34 @@ if __name__ == '__main__':
         print("   点击「高级」→「继续访问」即可\n")
 
     try:
-        # 使用 SocketIO 启动应用
-        socketio.run(
-            app,
-            host=host,
-            port=port,
-            debug=debug,
-            ssl_context=ssl_context,
-            allow_unsafe_werkzeug=True  # 允许在开发模式下使用 werkzeug
-        )
+        # 如果 SocketIO 可用，使用 socketio.run，否则使用 app.run
+        if SOCKETIO_AVAILABLE and socketio:
+            socketio.run(
+                app,
+                host=host,
+                port=port,
+                debug=debug,
+                ssl_context=ssl_context,
+                allow_unsafe_werkzeug=True
+            )
+        else:
+            app.run(
+                host=host,
+                port=port,
+                debug=debug,
+                threaded=True,
+                ssl_context=ssl_context
+            )
     finally:
         # 清理资源
         task_monitor.stop_monitoring()
-        from app.services.terminal_manager import terminal_manager
-        terminal_manager.close_all()
+
+        # 清理终端管理器 (如果可用)
+        if SOCKETIO_AVAILABLE:
+            try:
+                from app.services.terminal_manager import terminal_manager
+                terminal_manager.close_all()
+            except ImportError:
+                pass
+
         print("\n应用已停止")

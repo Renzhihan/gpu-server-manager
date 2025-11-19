@@ -31,21 +31,23 @@ jobs:
       run: |
         pyinstaller build_windows.spec
 
-    - name: 复制额外文件
+    - name: 复制额外文件到打包目录
       run: |
         Copy-Item START_WINDOWS.bat dist\GPU-Server-Manager\
         Copy-Item README.md dist\GPU-Server-Manager\
         Copy-Item .env.example dist\GPU-Server-Manager\
+        Copy-Item config\servers.yaml.example dist\GPU-Server-Manager\config\
 
-    - name: 创建发布包
-      run: |
-        Compress-Archive -Path dist\GPU-Server-Manager\* -DestinationPath GPU-Server-Manager-Windows.zip
-
-    - name: 上传构建产物
+    - name: 上传构建产物（直接上传目录，不额外压缩）
       uses: actions/upload-artifact@v4
       with:
         name: GPU-Server-Manager-Windows
-        path: GPU-Server-Manager-Windows.zip
+        path: dist/GPU-Server-Manager/
+
+    - name: 创建Release压缩包（仅用于Release）
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        Compress-Archive -Path dist\GPU-Server-Manager\* -DestinationPath GPU-Server-Manager-Windows.zip
 
     - name: 创建Release（如果是标签触发）
       if: startsWith(github.ref, 'refs/tags/')

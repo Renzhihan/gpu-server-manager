@@ -55,6 +55,25 @@
 .stat-card.stat-idle { border-left-color: #28a745; }
 .stat-card.stat-busy { border-left-color: #ffc107; }
 .stat-card.stat-full { border-left-color: #dc3545; }
+
+/* GPU 卡片内统一字体大小和间距 */
+.gpu-compact-card .card-body {
+    display: flex;
+    flex-direction: column;
+}
+.gpu-compact-card .card-body > div {
+    margin-bottom: 0.5rem;
+}
+.gpu-compact-card .card-body > div:last-child {
+    margin-bottom: 0;
+    margin-top: auto; /* 进程按钮固定在底部 */
+}
+.gpu-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 20px;
+}
 </style>
 {% endblock %}
 
@@ -104,11 +123,11 @@ function renderGPUs(gpus) {
         return;
     }
 
-    // 计算统计信息
+    // 计算统计信息（放宽"空闲"定义：显存占用 < 5% 或 < 1GB 视为空闲）
     const stats = {
         total: gpus.length,
-        idle: gpus.filter(g => g.memory_percent === 0).length,
-        busy: gpus.filter(g => g.memory_percent > 0 && g.memory_percent < 90).length,
+        idle: gpus.filter(g => g.memory_percent < 5 || g.memory_used < 1024).length,
+        busy: gpus.filter(g => (g.memory_percent >= 5 && g.memory_used >= 1024) && g.memory_percent < 90).length,
         full: gpus.filter(g => g.memory_percent >= 90).length
     };
 
@@ -174,18 +193,30 @@ function renderGPUs(gpus) {
     // 紧凑网格布局 - 自适应：超大屏6列，大屏4列，中屏3列，小屏2列
     const html = `
         <div class="row">
-            ${gpus.map(gpu => `
+            ${gpus.map(gpu => {
+                // 判断 GPU 状态：空闲（显存<5%或<1GB）、高负载（>=90%）、使用中
+                const isIdle = gpu.memory_percent < 5 || gpu.memory_used < 1024;
+                const isFull = gpu.memory_percent >= 90;
+                const borderClass = isIdle ? 'border-success' : (isFull ? 'border-danger' : '');
+                const headerBg = isIdle ? 'success' : (isFull ? 'danger' : 'primary');
+
+                return `
                 <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 mb-3">
-                    <div class="card gpu-compact-card ${gpu.memory_percent === 0 ? 'border-success' : gpu.memory_percent >= 90 ? 'border-danger' : ''}">
-                        <div class="card-header bg-${gpu.memory_percent === 0 ? 'success' : gpu.memory_percent >= 90 ? 'danger' : 'primary'} text-white py-2">
-                            <small><strong>GPU ${gpu.id}</strong></small>
+                    <div class="card gpu-compact-card ${borderClass}">
+                        <div class="card-header bg-${headerBg} text-white py-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small><strong>GPU ${gpu.id}</strong></small>
+                                <span class="badge bg-light text-dark" style="font-size: 0.65rem;">
+                                    ${isIdle ? '空闲' : (isFull ? '高负载' : '使用中')}
+                                </span>
+                            </div>
                         </div>
-                        <div class="card-body p-2">
-                            <div class="text-truncate mb-2" title="${gpu.name}">
-                                <small>${gpu.name.split(' ').slice(-2).join(' ')}</small>
+                        <div class="card-body p-3">
+                            <div class="text-truncate mb-2" title="${gpu.name}" style="min-height: 32px;">
+                                <small style="font-size: 0.75rem; line-height: 1.2;">${gpu.name.split(' ').slice(-2).join(' ')}</small>
                             </div>
 
-                            <div class="d-flex justify-content-between mb-1">
+                            <div class="gpu-info-row mb-2">
                                 <small class="text-muted">
                                     <i class="bi bi-thermometer-half"></i> ${gpu.temperature}°C
                                 </small>
@@ -194,25 +225,31 @@ function renderGPUs(gpus) {
                                 </small>
                             </div>
 
-                            <div>
-                                <small class="text-muted">显存:</small>
+                            <div class="mb-2">
+                                <div class="gpu-info-row">
+                                    <small class="text-muted"><strong>显存:</strong></small>
+                                    <small class="text-muted">${gpu.memory_percent}%</small>
+                                </div>
                                 <div class="progress gpu-progress-mini">
                                     <div class="progress-bar ${gpu.memory_percent > 90 ? 'bg-danger' : gpu.memory_percent > 70 ? 'bg-warning' : 'bg-success'}"
                                          style="width: ${gpu.memory_percent}%"></div>
                                 </div>
-                                <small class="text-muted">${gpu.memory_used}/${gpu.memory_total}MB (${gpu.memory_percent}%)</small>
+                                <small class="text-muted d-block mt-1" style="font-size: 0.7rem;">
+                                    ${gpu.memory_used} / ${gpu.memory_total} MB
+                                </small>
                             </div>
 
-                            <div class="mt-2">
-                                <button class="btn btn-sm btn-outline-secondary w-100 py-0" onclick="loadProcesses(${gpu.id})" style="font-size: 0.75rem;">
-                                    <i class="bi bi-list"></i> 进程
+                            <div class="mt-auto">
+                                <button class="btn btn-sm btn-outline-secondary w-100 py-1" onclick="loadProcesses(${gpu.id})" style="font-size: 0.75rem;">
+                                    <i class="bi bi-list"></i> 查看进程
                                 </button>
-                                <div id="processes-${gpu.id}" class="mt-1"></div>
+                                <div id="processes-${gpu.id}" class="mt-2"></div>
                             </div>
                         </div>
                     </div>
                 </div>
-            `).join('')}
+            `;
+            }).join('')}
         </div>
     `;
 

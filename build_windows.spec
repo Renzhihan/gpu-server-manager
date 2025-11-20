@@ -41,6 +41,11 @@ hiddenimports = [
     'apscheduler',
     'engineio',
     'socketio',
+    # SocketIO 异步驱动 (PyInstaller 必需)
+    'engineio.async_drivers.threading',
+    'engineio.async_drivers.eventlet',
+    'engineio.async_threading',
+    'engineio.async_eventlet',
     'app.routes.main',
     'app.routes.api',
     'app.routes.terminal_events',

@@ -7,7 +7,7 @@ import os
 socketio = None
 try:
     from flask_socketio import SocketIO
-    socketio = SocketIO()
+    # 延迟创建实例，在 create_app 中初始化
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
@@ -32,8 +32,11 @@ def create_app(config_name=None):
     CORS(app)
 
     # 初始化 SocketIO (如果可用)
-    if SOCKETIO_AVAILABLE and socketio:
-        # PyInstaller 环境下不指定 async_mode，让它自动选择
+    global socketio
+    if SOCKETIO_AVAILABLE:
+        # 创建并初始化 SocketIO 实例
+        # PyInstaller 环境通过 hiddenimports 包含异步驱动，让其自动选择
+        socketio = SocketIO()
         socketio.init_app(app, cors_allowed_origins="*")
 
     # 注册蓝图

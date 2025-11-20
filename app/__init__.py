@@ -33,7 +33,8 @@ def create_app(config_name=None):
 
     # 初始化 SocketIO (如果可用)
     if SOCKETIO_AVAILABLE and socketio:
-        socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
+        # PyInstaller 环境下不指定 async_mode，让它自动选择
+        socketio.init_app(app, cors_allowed_origins="*")
 
     # 注册蓝图
     from app.routes import main, api

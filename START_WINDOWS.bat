@@ -26,10 +26,18 @@ if not exist "config\servers.yaml" (
         echo 2. 按照示例修改服务器 IP、用户名、密码
         echo 3. 保存文件后重新运行本脚本
         echo.
-        pause
+        echo 按任意键打开配置文件编辑...
+        pause >nul
+        notepad config\servers.yaml
         exit /b 0
     ) else (
         echo [错误] 未找到 config\servers.yaml.example 示例文件！
+        echo.
+        echo 可能的原因：
+        echo 1. 打包不完整，缺少配置文件模板
+        echo 2. 文件被意外删除
+        echo.
+        echo 请重新下载完整的压缩包。
         pause
         exit /b 1
     )
@@ -48,6 +56,22 @@ echo [信息] 正在启动 GPU 服务器管理系统...
 echo [信息] 浏览器访问: http://localhost:5000
 echo [信息] 管理员密码: admin
 echo.
+echo 如果出现错误，请查看同目录下的 error.log 文件
+echo.
+
 GPU-Server-Manager.exe
 
-pause
+:: 检查是否生成了错误日志
+if exist "error.log" (
+    echo.
+    echo ============================================
+    echo   检测到错误日志文件！
+    echo ============================================
+    echo.
+    type error.log
+    echo.
+    echo 按任意键退出...
+    pause >nul
+) else (
+    pause
+)

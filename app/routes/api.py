@@ -665,46 +665,59 @@ def list_tasks():
 @bp.route('/tasks/create', methods=['POST'])
 def create_task():
     """创建任务监控"""
-    data = request.get_json()
-    server_name = data.get('server_name')
-    task_name = data.get('task_name')
-    monitor_type = data.get('monitor_type', 'process')  # 'process' 或 'gpu_idle'
-    pid = data.get('pid')
-    gpu_id = data.get('gpu_id')
-    notify_emails = data.get('notify_emails', [])
-    check_interval = data.get('check_interval', 60)
-    timeout = data.get('timeout')  # None 表示无限期
+    try:
+        data = request.get_json()
+        server_name = data.get('server_name')
+        task_name = data.get('task_name')
+        monitor_type = data.get('monitor_type', 'process')  # 'process' 或 'gpu_idle'
+        pid = data.get('pid')
+        gpu_id = data.get('gpu_id')
+        notify_emails = data.get('notify_emails', [])
+        check_interval = data.get('check_interval', 60)
+        timeout = data.get('timeout')  # None 表示无限期
 
-    # 验证必要参数
-    if not all([server_name, task_name]):
-        return jsonify({'success': False, 'error': '缺少服务器和任务名称'}), 400
+        print(f"[任务创建] 收到请求: server={server_name}, task={task_name}, type={monitor_type}, pid={pid}, gpu_id={gpu_id}, emails={notify_emails}")
 
-    if monitor_type == 'process' and not pid:
-        return jsonify({'success': False, 'error': '进程监控需要提供 PID'}), 400
+        # 验证必要参数
+        if not all([server_name, task_name]):
+            return jsonify({'success': False, 'error': '缺少服务器和任务名称'}), 400
 
-    if monitor_type == 'gpu_idle' and gpu_id is None:
-        return jsonify({'success': False, 'error': 'GPU 空闲监控需要提供 GPU ID'}), 400
+        if monitor_type == 'process' and not pid:
+            return jsonify({'success': False, 'error': '进程监控需要提供 PID'}), 400
 
-    # 验证邮件配置（如果用户提供了邮箱）
-    if notify_emails:
-        if not Config.SMTP_USERNAME or not Config.SMTP_PASSWORD:
-            return jsonify({
-                'success': False,
-                'error': '邮件通知未配置：请先在 .env 文件中配置 SMTP_USERNAME 和 SMTP_PASSWORD'
-            }), 400
+        if monitor_type == 'gpu_idle' and gpu_id is None:
+            return jsonify({'success': False, 'error': 'GPU 空闲监控需要提供 GPU ID'}), 400
 
-    task_id = task_monitor.add_task(
-        server_name=server_name,
-        task_name=task_name,
-        pid=pid,
-        gpu_id=gpu_id,
-        notify_emails=notify_emails,
-        check_interval=check_interval,
-        timeout=timeout,
-        monitor_type=monitor_type
-    )
+        # 验证邮件配置（如果用户提供了邮箱）
+        if notify_emails and len(notify_emails) > 0:
+            from app.services.email_service import EmailService
+            smtp_config = EmailService.get_smtp_config()
+            print(f"[任务创建] SMTP配置检查: username={smtp_config.get('smtp_username')}, has_password={bool(smtp_config.get('smtp_password'))}")
+            if not smtp_config.get('smtp_username') or not smtp_config.get('smtp_password'):
+                return jsonify({
+                    'success': False,
+                    'error': '邮件通知未配置：请先在任务监控页面配置 SMTP 邮件服务'
+                }), 400
 
-    return jsonify({'success': True, 'task_id': task_id})
+        task_id = task_monitor.add_task(
+            server_name=server_name,
+            task_name=task_name,
+            pid=pid,
+            gpu_id=gpu_id,
+            notify_emails=notify_emails,
+            check_interval=check_interval,
+            timeout=timeout,
+            monitor_type=monitor_type
+        )
+
+        print(f"[任务创建] 成功创建任务: task_id={task_id}")
+        return jsonify({'success': True, 'task_id': task_id})
+
+    except Exception as e:
+        import traceback
+        print(f"[任务创建错误] {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': f'创建任务失败: {str(e)}'}), 500
 
 
 @bp.route('/tasks/<task_id>', methods=['GET'])

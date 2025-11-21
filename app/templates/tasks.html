@@ -773,6 +773,7 @@ async function createTask() {
 
     let successCount = 0;
     let failedCount = 0;
+    let errors = [];  // 收集错误信息
 
     if (monitorType === 'process') {
         if (selectedProcesses.length === 0) {
@@ -794,8 +795,12 @@ async function createTask() {
                 })
             });
 
-            if (result.success) successCount++;
-            else failedCount++;
+            if (result.success) {
+                successCount++;
+            } else {
+                failedCount++;
+                errors.push(`PID ${process.pid}: ${result.error || '未知错误'}`);
+            }
         }
     } else {
         if (selectedGPUs.length === 0) {
@@ -817,18 +822,29 @@ async function createTask() {
                 })
             });
 
-            if (result.success) successCount++;
-            else failedCount++;
+            if (result.success) {
+                successCount++;
+            } else {
+                failedCount++;
+                errors.push(`GPU ${gpuId}: ${result.error || '未知错误'}`);
+            }
         }
     }
 
     bootstrap.Modal.getInstance(document.getElementById('createTaskModal')).hide();
 
     if (successCount > 0) {
-        utils.showAlert(`成功创建 ${successCount} 个任务监控${failedCount > 0 ? `，${failedCount} 个失败` : ''}`, 'success');
+        let message = `成功创建 ${successCount} 个任务监控`;
+        if (failedCount > 0) {
+            message += `，${failedCount} 个失败<br><small>${errors.join('<br>')}</small>`;
+            utils.showAlert(message, 'warning');
+        } else {
+            utils.showAlert(message, 'success');
+        }
         loadTasks();
     } else {
-        utils.showAlert('创建任务监控失败', 'danger');
+        const errorMsg = errors.length > 0 ? `<br><small>${errors.join('<br>')}</small>` : '';
+        utils.showAlert('创建任务监控失败' + errorMsg, 'danger');
     }
 }
 

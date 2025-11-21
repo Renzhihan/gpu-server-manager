@@ -2,6 +2,8 @@ name: Build Windows EXE
 
 on:
   push:
+    branches:
+      - main  # 推送到main分支时触发
     tags:
       - 'v*'  # 当推送版本标签时触发（如 v1.0.0）
   workflow_dispatch:  # 允许手动触发
@@ -45,18 +47,45 @@ jobs:
         name: GPU-Server-Manager-Windows
         path: dist/GPU-Server-Manager/
 
-    - name: 创建Release压缩包（仅用于Release）
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: 创建Release压缩包
       run: |
         Compress-Archive -Path dist\GPU-Server-Manager\* -DestinationPath GPU-Server-Manager-Windows.zip
 
-    - name: 创建Release（如果是标签触发）
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: 生成版本号和Release信息
+      id: release_info
+      shell: bash
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          # 如果是tag触发，使用tag作为版本号
+          VERSION="${{ github.ref_name }}"
+          IS_PRERELEASE="false"
+        else
+          # 如果是push触发，生成基于时间的版本号
+          VERSION="dev-$(date +'%Y%m%d-%H%M%S')"
+          IS_PRERELEASE="true"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+        echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "commit_msg=$(git log -1 --pretty=%B)" >> $GITHUB_OUTPUT
+
+    - name: 创建或更新Release
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: ${{ steps.release_info.outputs.version }}
+        name: Release ${{ steps.release_info.outputs.version }}
+        prerelease: ${{ steps.release_info.outputs.is_prerelease }}
         files: GPU-Server-Manager-Windows.zip
         body: |
           ## GPU 服务器管理系统 - Windows版本
+
+          **版本**: ${{ steps.release_info.outputs.version }}
+          **提交**: ${{ steps.release_info.outputs.commit_sha }}
+
+          ### 📝 更新内容
+          ```
+          ${{ steps.release_info.outputs.commit_msg }}
+          ```
 
           ### 📦 安装说明
           1. 解压 GPU-Server-Manager-Windows.zip

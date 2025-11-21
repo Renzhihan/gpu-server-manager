@@ -273,29 +273,6 @@ SMTP_USE_TLS=True
 - [ ] **定期备份** - 备份 `config/servers.yaml` 配置文件
 - [ ] **日志审计** - 定期检查系统日志和操作记录
 
-### 网络安全建议
-
-**推荐部署架构：**
-```
-用户 → VPN/内网 → Nginx(HTTPS) → GPU Manager(localhost:5000) → SSH → GPU服务器
-```
-
-**Nginx反向代理示例：**
-```nginx
-server {
-    listen 443 ssl;
-    server_name gpu-manager.yourdomain.com;
-
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
 
 ---
 

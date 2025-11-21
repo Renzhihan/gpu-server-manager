@@ -105,6 +105,13 @@ class SSHConnectionPool:
                 self.connections[server_name] = client
             return client
 
+    def get_client(self, server_name: str) -> Optional[paramiko.SSHClient]:
+        """
+        创建独立的 SSH 客户端（不加入连接池）
+        主要用于需要独占会话的场景，例如 Web 终端
+        """
+        return self._create_connection(server_name)
+
     def execute_command(self, server_name: str, command: str, timeout: int = 30) -> Dict:
         """
         在指定服务器上执行命令

@@ -527,6 +527,14 @@ def create_task():
     if monitor_type == 'gpu_idle' and gpu_id is None:
         return jsonify({'success': False, 'error': 'GPU 空闲监控需要提供 GPU ID'}), 400
 
+    # 验证邮件配置（如果用户提供了邮箱）
+    if notify_emails:
+        if not Config.SMTP_USERNAME or not Config.SMTP_PASSWORD:
+            return jsonify({
+                'success': False,
+                'error': '邮件通知未配置：请先在 .env 文件中配置 SMTP_USERNAME 和 SMTP_PASSWORD'
+            }), 400
+
     task_id = task_monitor.add_task(
         server_name=server_name,
         task_name=task_name,
@@ -584,6 +592,18 @@ def delete_task(task_id):
 
 
 # ==================== 邮件服务 API ====================
+
+@bp.route('/email/status', methods=['GET'])
+def email_status():
+    """检查邮件配置状态"""
+    is_configured = bool(Config.SMTP_USERNAME and Config.SMTP_PASSWORD)
+    return jsonify({
+        'success': True,
+        'configured': is_configured,
+        'smtp_server': Config.SMTP_SERVER if is_configured else None,
+        'smtp_from': Config.SMTP_FROM or Config.SMTP_USERNAME if is_configured else None
+    })
+
 
 @bp.route('/email/send', methods=['POST'])
 def send_email():

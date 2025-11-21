@@ -49,8 +49,10 @@ def create_app(config_name=None):
         try:
             from app.routes.terminal_events import register_terminal_events
             register_terminal_events(socketio)
-        except ImportError:
-            print("[警告] 终端事件处理模块加载失败")
+        except ImportError as exc:
+            print(f"[警告] 终端事件处理模块加载失败: {exc}")
+        except Exception as exc:
+            print(f"[警告] 终端事件注册失败: {exc}")
 
     # 存储功能可用性标志
     app.config['SOCKETIO_AVAILABLE'] = SOCKETIO_AVAILABLE

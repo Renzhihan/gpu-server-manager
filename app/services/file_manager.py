@@ -1,3 +1,5 @@
+import base64
+import json
 from typing import Dict, List
 from .ssh_manager import ssh_pool
 
@@ -16,10 +18,91 @@ class FileManager:
             'error': str
         }
         """
-        # 使用 ls -lh 获取详细信息
-        command = f"ls -lhA --time-style=long-iso '{path}' 2>&1"
+        remote_path = path or '/'
+        script = f"""
+import os
+import json
+import stat
+import sys
+from datetime import datetime
 
-        result = ssh_pool.execute_command(server_name, command, timeout=15)
+try:
+    import pwd
+except ImportError:
+    pwd = None
+
+try:
+    import grp
+except ImportError:
+    grp = None
+
+path = {json.dumps(remote_path)}
+if not path:
+    path = '/'
+
+def resolve_owner(uid):
+    if pwd:
+        try:
+            return pwd.getpwuid(uid).pw_name
+        except KeyError:
+            return str(uid)
+    return str(uid)
+
+def resolve_group(gid):
+    if grp:
+        try:
+            return grp.getgrgid(gid).gr_name
+        except KeyError:
+            return str(gid)
+    return str(gid)
+
+def format_size(num):
+    units = ['B', 'K', 'M', 'G', 'T', 'P']
+    value = float(num)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            if unit == 'B':
+                return f"{{int(value)}}B"
+            return f"{{value:.1f}}{{unit}}"
+        value /= 1024
+    return f"{{value:.1f}}P"
+
+entries = []
+try:
+    with os.scandir(path) as iterator:
+        for entry in iterator:
+            try:
+                stat_result = entry.stat(follow_symlinks=False)
+            except Exception:
+                continue
+            info = {{
+                'permissions': stat.filemode(stat_result.st_mode),
+                'links': stat_result.st_nlink,
+                'owner': resolve_owner(stat_result.st_uid),
+                'group': resolve_group(stat_result.st_gid),
+                'size': format_size(stat_result.st_size),
+                'date': datetime.fromtimestamp(stat_result.st_mtime).strftime('%Y-%m-%d %H:%M'),
+                'name': entry.name,
+                'is_dir': entry.is_dir(follow_symlinks=False),
+                'is_link': entry.is_symlink()
+            }}
+            entries.append(info)
+except Exception as exc:
+    print(json.dumps({{'success': False, 'files': [], 'error': str(exc)}} , ensure_ascii=False))
+    sys.exit(0)
+
+entries.sort(key=lambda item: (not item['is_dir'], item['name'].lower()))
+print(json.dumps({{'success': True, 'files': entries, 'error': ''}}, ensure_ascii=False))
+sys.exit(0)
+"""
+
+        encoded_script = base64.b64encode(script.encode('utf-8')).decode('ascii')
+        command = (
+            "python3 -c \"import base64, sys; "
+            f"exec(compile(base64.b64decode('{encoded_script}'), '<remote_ls>', 'exec'))\""
+        )
+
+        result = ssh_pool.execute_command(server_name, command, timeout=20)
 
         if not result['success']:
             return {
@@ -28,32 +111,33 @@ class FileManager:
                 'error': result['stderr'] or '无法访问目录'
             }
 
-        files = []
-        lines = result['stdout'].strip().split('\n')
+        output = result['stdout'].strip()
+        if not output:
+            return {
+                'success': False,
+                'files': [],
+                'error': '远端未返回目录信息'
+            }
 
-        for line in lines:
-            # 跳过空行和"total xxx"行
-            if not line.strip() or line.startswith('total '):
-                continue
+        try:
+            payload = json.loads(output)
+        except json.JSONDecodeError:
+            return {
+                'success': False,
+                'files': [],
+                'error': '解析目录信息失败'
+            }
 
-            # 解析ls -lh输出
-            parts = line.split(maxsplit=8)
-            if len(parts) >= 9:
-                files.append({
-                    'permissions': parts[0],
-                    'links': parts[1],
-                    'owner': parts[2],
-                    'group': parts[3],
-                    'size': parts[4],
-                    'date': f"{parts[5]} {parts[6]}",
-                    'name': parts[8],
-                    'is_dir': parts[0].startswith('d'),
-                    'is_link': parts[0].startswith('l')
-                })
+        if not payload.get('success'):
+            return {
+                'success': False,
+                'files': [],
+                'error': payload.get('error', '无法访问目录')
+            }
 
         return {
             'success': True,
-            'files': files,
+            'files': payload.get('files', []),
             'error': ''
         }
 

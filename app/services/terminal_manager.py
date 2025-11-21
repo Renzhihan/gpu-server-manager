@@ -15,6 +15,7 @@ class TerminalSession:
         self.server_name = server_name
         self.sid = sid
         self.channel = None
+        self.client = None
         self.running = False
         self.read_thread = None
 
@@ -26,8 +27,9 @@ class TerminalSession:
             if not client:
                 return {'success': False, 'error': 'SSH 连接失败'}
 
+            self.client = client
             # 创建交互式 shell
-            self.channel = client.invoke_shell(term='xterm', width=120, height=30)
+            self.channel = self.client.invoke_shell(term='xterm', width=120, height=30)
             self.channel.settimeout(0.1)
             self.running = True
 
@@ -39,6 +41,12 @@ class TerminalSession:
             return {'success': True}
 
         except Exception as e:
+            if self.client:
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+                self.client = None
             return {'success': False, 'error': str(e)}
 
     def _read_output(self, socketio):
@@ -89,8 +97,15 @@ class TerminalSession:
                 self.channel.close()
             except Exception:
                 pass
+            self.channel = None
         if self.read_thread:
             self.read_thread.join(timeout=1)
+        if self.client:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
 
 
 class TerminalManager:

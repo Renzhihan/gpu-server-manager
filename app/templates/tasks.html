@@ -121,7 +121,7 @@
                         <div id="gpuIdleStatusOverview" class="mb-3"></div>
                         <div class="alert alert-info">
                             <i class="bi bi-info-circle"></i>
-                            <strong>提示:</strong> 选择要监听的GPU卡，当该卡空闲时（无进程且显存为0MB）会自动发送邮件通知。
+                            <strong>提示:</strong> 选择要监听的GPU卡，当该卡空闲时（无进程且显存 &lt; 50MB）会自动发送邮件通知。
                         </div>
                     </div>
 
@@ -230,6 +230,7 @@
 
 {% block extra_js %}
 <script>
+const GPU_IDLE_THRESHOLD = 50; // MB
 let selectedProcesses = [];
 let selectedGPUs = [];
 let currentStep = 1;
@@ -331,11 +332,14 @@ async function loadGPUStatusForIdle(serverName) {
     }
 
     const html = `
-        <h6 class="text-muted mb-3">选择要监听的GPU卡</h6>
+        <h6 class="text-muted mb-3">
+            选择要监听的GPU卡
+            <small class="text-muted ms-2">(显存 &lt; ${GPU_IDLE_THRESHOLD}MB 视为空闲)</small>
+        </h6>
         <div class="row">
             ${result.gpus.map(gpu => `
                 <div class="col-md-6 mb-3">
-                    <div class="card ${gpu.memory_used === 0 ? 'border-success' : ''}" style="cursor: pointer;" onclick="toggleGPUSelection(${gpu.id})">
+                    <div class="card ${gpu.memory_used < GPU_IDLE_THRESHOLD ? 'border-success' : ''}" style="cursor: pointer;" onclick="toggleGPUSelection(${gpu.id})">
                         <div class="card-body">
                             <div class="form-check">
                                 <input class="form-check-input gpu-idle-checkbox" type="checkbox" value="${gpu.id}" id="gpu_${gpu.id}">
@@ -344,8 +348,8 @@ async function loadGPUStatusForIdle(serverName) {
                                     <div class="d-flex justify-content-between small mt-2">
                                         <span><i class="bi bi-thermometer"></i> ${gpu.temperature}°C</span>
                                         <span><i class="bi bi-speedometer2"></i> ${gpu.utilization}%</span>
-                                        <span class="${gpu.memory_used === 0 ? 'text-success' : 'text-danger'}">
-                                            <i class="bi bi-${gpu.memory_used === 0 ? 'check-circle' : 'exclamation-circle'}"></i>
+                                        <span class="${gpu.memory_used < GPU_IDLE_THRESHOLD ? 'text-success' : 'text-danger'}">
+                                            <i class="bi bi-${gpu.memory_used < GPU_IDLE_THRESHOLD ? 'check-circle' : 'exclamation-circle'}"></i>
                                             ${gpu.memory_used} MB
                                         </span>
                                     </div>

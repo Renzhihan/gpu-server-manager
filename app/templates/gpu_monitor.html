@@ -81,6 +81,7 @@
 <script>
 let autoRefreshInterval = null;
 let selectedServer = null;
+const GPU_IDLE_THRESHOLD = 50; // MB
 
 async function loadServers() {
     const result = await utils.apiRequest('/api/servers');
@@ -123,11 +124,11 @@ function renderGPUs(gpus) {
         return;
     }
 
-    // 计算统计信息（放宽"空闲"定义：显存占用 < 5% 或 < 1GB 视为空闲）
+    // 计算统计信息（显存占用 < 50MB 视为空闲）
     const stats = {
         total: gpus.length,
-        idle: gpus.filter(g => g.memory_percent < 5 || g.memory_used < 1024).length,
-        busy: gpus.filter(g => (g.memory_percent >= 5 && g.memory_used >= 1024) && g.memory_percent < 90).length,
+        idle: gpus.filter(g => g.memory_used < GPU_IDLE_THRESHOLD).length,
+        busy: gpus.filter(g => g.memory_used >= GPU_IDLE_THRESHOLD && g.memory_percent < 90).length,
         full: gpus.filter(g => g.memory_percent >= 90).length
     };
 
@@ -190,18 +191,18 @@ function renderGPUs(gpus) {
     `;
     document.getElementById('gpuStats').innerHTML = statsHtml;
 
-    // 紧凑网格布局 - 自适应：超大屏6列，大屏4列，中屏3列，小屏2列
+    // 紧凑网格布局 - 保持每行列数一致
     const html = `
-        <div class="row">
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3">
             ${gpus.map(gpu => {
-                // 判断 GPU 状态：空闲（显存<5%或<1GB）、高负载（>=90%）、使用中
-                const isIdle = gpu.memory_percent < 5 || gpu.memory_used < 1024;
+                // 判断 GPU 状态：空闲（显存<50MB）、高负载（>=90%）、使用中
+                const isIdle = gpu.memory_used < GPU_IDLE_THRESHOLD;
                 const isFull = gpu.memory_percent >= 90;
                 const borderClass = isIdle ? 'border-success' : (isFull ? 'border-danger' : '');
                 const headerBg = isIdle ? 'success' : (isFull ? 'danger' : 'primary');
 
                 return `
-                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 mb-3">
+                <div class="col">
                     <div class="card gpu-compact-card ${borderClass}">
                         <div class="card-header bg-${headerBg} text-white py-2">
                             <div class="d-flex justify-content-between align-items-center">

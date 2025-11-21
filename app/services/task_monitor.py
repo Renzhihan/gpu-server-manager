@@ -60,7 +60,8 @@ class TaskMonitor:
                 'created_at': datetime.now().isoformat(),
                 'completed_at': None,
                 'last_check': None,
-                'gpu_was_busy': False  # 用于GPU空闲监听：记录是否检测到过非空闲状态
+                'gpu_was_busy': False,  # 用于GPU空闲监听：记录是否检测到过非空闲状态
+                'email_status': None  # 邮件发送状态：'sent' | 'failed' | 'no_email'
             }
 
             # 启动监控线程（如果尚未启动）
@@ -147,13 +148,18 @@ class TaskMonitor:
 
             # 发送邮件通知
             if task['notify_emails']:
-                email_service.send_task_completion_notification(
+                email_result = email_service.send_task_completion_notification(
                     to_emails=task['notify_emails'],
                     task_name=task['task_name'],
                     server_name=server_name,
                     status='success',
                     details=f"进程 PID: {pid} 已结束\n完成时间: {task['completed_at']}"
                 )
+                task['email_status'] = 'sent' if email_result['success'] else 'failed'
+                if not email_result['success']:
+                    print(f"[警告] 任务 {task['task_id']} 邮件发送失败: {email_result['error']}")
+            else:
+                task['email_status'] = 'no_email'
 
             return False
 
@@ -168,13 +174,18 @@ class TaskMonitor:
 
                 # 发送超时通知
                 if task['notify_emails']:
-                    email_service.send_task_completion_notification(
+                    email_result = email_service.send_task_completion_notification(
                         to_emails=task['notify_emails'],
                         task_name=task['task_name'],
                         server_name=server_name,
                         status='timeout',
                         details=f"任务 PID: {pid}\n超时时间: {task['timeout']}秒\n已运行: {int(elapsed)}秒"
                     )
+                    task['email_status'] = 'sent' if email_result['success'] else 'failed'
+                    if not email_result['success']:
+                        print(f"[警告] 任务 {task['task_id']} 邮件发送失败: {email_result['error']}")
+                else:
+                    task['email_status'] = 'no_email'
 
                 return False
 
@@ -203,8 +214,8 @@ class TaskMonitor:
             except:
                 pass
 
-        # GPU空闲条件：无进程 且 显存使用为0MB
-        is_idle = not has_processes and memory_used == 0
+        # GPU空闲条件：无进程 且 显存使用低于50MB
+        is_idle = not has_processes and memory_used < 50
 
         # 如果GPU非空闲，标记已检测到忙碌状态
         if not is_idle:
@@ -221,13 +232,18 @@ class TaskMonitor:
 
         # 发送邮件通知
         if task['notify_emails']:
-            email_service.send_task_completion_notification(
+            email_result = email_service.send_task_completion_notification(
                 to_emails=task['notify_emails'],
                 task_name=task['task_name'],
                 server_name=server_name,
                 status='success',
                 details=f"GPU {gpu_id} 已空闲\n显存使用: {memory_used} MB\n完成时间: {task['completed_at']}"
             )
+            task['email_status'] = 'sent' if email_result['success'] else 'failed'
+            if not email_result['success']:
+                print(f"[警告] 任务 {task['task_id']} 邮件发送失败: {email_result['error']}")
+        else:
+            task['email_status'] = 'no_email'
 
         return False
 

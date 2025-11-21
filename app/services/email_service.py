@@ -190,14 +190,46 @@ class EmailService:
             # 根据配置选择连接方式
             if use_ssl or smtp_port == 465:
                 # 使用 SSL 连接（端口 465）
+                # 创建SSL上下文，针对QQ邮箱等服务器进行兼容性优化
                 context = ssl.create_default_context()
-                with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=context) as server:
-                    print(f"[邮件调试] SSL 连接成功")
-                    server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
-                    print(f"[邮件调试] 登录成功")
-                    # 使用 sendmail 代替 send_message，更明确地指定发送者和接收者
-                    server.sendmail(from_email, to_emails, msg.as_string())
-                    print(f"[邮件调试] 邮件发送成功")
+                # 允许较旧的TLS版本和加密套件，提升兼容性
+                context.check_hostname = True
+                context.verify_mode = ssl.CERT_REQUIRED
+                # 设置最低TLS版本为TLSv1（兼容更多服务器）
+                try:
+                    # Python 3.7+
+                    context.minimum_version = ssl.TLSVersion.TLSv1
+                except AttributeError:
+                    # Python 3.6及以下
+                    context.options &= ~ssl.OP_NO_TLSv1
+
+                print(f"[邮件调试] 尝试SSL连接: {smtp_server}:{smtp_port}")
+
+                try:
+                    # 方法1: 使用标准SMTP_SSL
+                    with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=context) as server:
+                        print(f"[邮件调试] SSL 连接成功")
+                        server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+                        print(f"[邮件调试] 登录成功")
+                        server.sendmail(from_email, to_emails, msg.as_string())
+                        print(f"[邮件调试] 邮件发送成功")
+                except (ssl.SSLError, OSError) as e:
+                    print(f"[邮件调试] SSL直连失败，尝试备用方法: {e}")
+                    # 方法2: 备用方案 - 使用SMTP+STARTTLS（某些QQ邮箱配置需要）
+                    # 注意：这里仍然使用465端口，但通过普通连接+升级TLS的方式
+                    with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+                        print(f"[邮件调试] 尝试SMTP普通连接")
+                        server.ehlo()
+                        print(f"[邮件调试] EHLO 完成")
+                        # 尝试升级到TLS
+                        context_tls = ssl.create_default_context()
+                        server.starttls(context=context_tls)
+                        print(f"[邮件调试] STARTTLS 完成")
+                        server.ehlo()
+                        server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+                        print(f"[邮件调试] 登录成功（备用方法）")
+                        server.sendmail(from_email, to_emails, msg.as_string())
+                        print(f"[邮件调试] 邮件发送成功（备用方法）")
             else:
                 # 使用 STARTTLS（端口 587）
                 with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
@@ -205,7 +237,8 @@ class EmailService:
                     server.ehlo()  # 标识客户端
                     print(f"[邮件调试] EHLO 完成")
                     if use_tls:
-                        server.starttls()
+                        context = ssl.create_default_context()
+                        server.starttls(context=context)
                         print(f"[邮件调试] STARTTLS 完成")
                         server.ehlo()  # TLS 后重新标识
                     server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])

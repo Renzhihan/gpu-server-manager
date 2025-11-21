@@ -67,7 +67,12 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
         echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "commit_msg=$(git log -1 --pretty=%B)" >> $GITHUB_OUTPUT
+
+        # 获取commit message（处理多行文本）
+        COMMIT_MSG=$(git log -1 --pretty=%B)
+        echo "commit_msg<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMMIT_MSG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
 
     - name: 创建或更新Release
       uses: softprops/action-gh-release@v1

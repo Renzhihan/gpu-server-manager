@@ -42,6 +42,7 @@ Thumbs.db
 *.log
 logs/
 data/user_prefs.json
+data/smtp_config.json
 ssl/
 flask_session/
 config/servers.yaml  # 包含敏感信息，使用 servers.yaml.example 作为模板

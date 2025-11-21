@@ -6,12 +6,17 @@
 {% block content %}
 <div class="alert alert-info">
     <i class="bi bi-info-circle"></i>
-    <strong>提示:</strong> 服务器配置存储在 <code>config/servers.yaml</code> 文件中。修改后请点击"重新加载配置"按钮。
+    <strong>提示:</strong> 服务器配置存储在 <code>config/servers.yaml</code> 文件中。可以在此界面直接添加、编辑或删除服务器。
 </div>
 
 <div class="row mb-3">
-    <div class="col-md-12 text-end">
-        <button class="btn btn-success" onclick="testAllConnections()">
+    <div class="col-md-6">
+        <button class="btn btn-success" onclick="showAddServerModal()">
+            <i class="bi bi-plus-circle"></i> 添加服务器
+        </button>
+    </div>
+    <div class="col-md-6 text-end">
+        <button class="btn btn-info" onclick="testAllConnections()">
             <i class="bi bi-broadcast"></i> 一键测试所有连接
         </button>
         <button class="btn btn-primary" onclick="reloadConfig()">
@@ -26,10 +31,240 @@
 <div id="serversContainer">
     <div class="text-center"><div class="spinner-border"></div></div>
 </div>
+
+<!-- 添加/编辑服务器 Modal -->
+<div class="modal fade" id="serverModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="serverModalTitle">
+                    <i class="bi bi-server"></i> 添加服务器
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editServerOriginalName">
+                <input type="hidden" id="isEditMode" value="false">
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="serverName" class="form-label">服务器名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="serverName" placeholder="例如: GPU Server 1">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="serverDescription" class="form-label">描述</label>
+                            <input type="text" class="form-control" id="serverDescription" placeholder="例如: 3090">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label for="serverHost" class="form-label">主机地址 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="serverHost" placeholder="IP 或域名">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="serverPort" class="form-label">SSH 端口 <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="serverPort" value="22">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="serverUsername" class="form-label">用户名 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="serverUsername" placeholder="SSH 用户名">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">认证方式 <span class="text-danger">*</span></label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="authMethod" id="authPassword" value="password" checked onchange="toggleAuthMethod()">
+                                    <label class="form-check-label" for="authPassword">密码</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="authMethod" id="authKey" value="key" onchange="toggleAuthMethod()">
+                                    <label class="form-check-label" for="authKey">SSH 密钥</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="passwordAuth">
+                    <div class="mb-3">
+                        <label for="serverPassword" class="form-label">密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" id="serverPassword" placeholder="SSH 密码">
+                    </div>
+                </div>
+
+                <div id="keyAuth" style="display:none;">
+                    <div class="mb-3">
+                        <label for="serverKeyFile" class="form-label">SSH 密钥文件路径 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="serverKeyFile" placeholder="例如: /root/.ssh/id_rsa">
+                    </div>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="serverGpuEnabled" checked>
+                    <label class="form-check-label" for="serverGpuEnabled">
+                        这是一台 GPU 服务器
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveServer()">
+                    <i class="bi bi-save"></i> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+function toggleAuthMethod() {
+    const authMethod = document.querySelector('input[name="authMethod"]:checked').value;
+    document.getElementById('passwordAuth').style.display = authMethod === 'password' ? 'block' : 'none';
+    document.getElementById('keyAuth').style.display = authMethod === 'key' ? 'block' : 'none';
+}
+
+function showAddServerModal() {
+    document.getElementById('isEditMode').value = 'false';
+    document.getElementById('serverModalTitle').innerHTML = '<i class="bi bi-server"></i> 添加服务器';
+
+    // 重置表单
+    document.getElementById('serverName').value = '';
+    document.getElementById('serverDescription').value = '';
+    document.getElementById('serverHost').value = '';
+    document.getElementById('serverPort').value = '22';
+    document.getElementById('serverUsername').value = '';
+    document.getElementById('serverPassword').value = '';
+    document.getElementById('serverKeyFile').value = '';
+    document.getElementById('serverGpuEnabled').checked = true;
+    document.getElementById('authPassword').checked = true;
+    toggleAuthMethod();
+
+    new bootstrap.Modal(document.getElementById('serverModal')).show();
+}
+
+function showEditServerModal(server) {
+    document.getElementById('isEditMode').value = 'true';
+    document.getElementById('editServerOriginalName').value = server.name;
+    document.getElementById('serverModalTitle').innerHTML = '<i class="bi bi-pencil"></i> 编辑服务器';
+
+    // 填充表单
+    document.getElementById('serverName').value = server.name;
+    document.getElementById('serverDescription').value = server.description || '';
+    document.getElementById('serverHost').value = server.host;
+    document.getElementById('serverPort').value = server.port;
+    document.getElementById('serverUsername').value = server.username;
+    document.getElementById('serverGpuEnabled').checked = server.gpu_enabled;
+
+    // 认证方式（编辑模式下保持原样，不显示密码）
+    if (server.key_file) {
+        document.getElementById('authKey').checked = true;
+        document.getElementById('serverKeyFile').value = server.key_file;
+    } else {
+        document.getElementById('authPassword').checked = true;
+        document.getElementById('serverPassword').value = '';
+        document.getElementById('serverPassword').placeholder = '留空则保持不变';
+    }
+    toggleAuthMethod();
+
+    new bootstrap.Modal(document.getElementById('serverModal')).show();
+}
+
+async function saveServer() {
+    const isEditMode = document.getElementById('isEditMode').value === 'true';
+    const originalName = document.getElementById('editServerOriginalName').value;
+
+    const authMethod = document.querySelector('input[name="authMethod"]:checked').value;
+    const serverData = {
+        name: document.getElementById('serverName').value.trim(),
+        description: document.getElementById('serverDescription').value.trim(),
+        host: document.getElementById('serverHost').value.trim(),
+        port: parseInt(document.getElementById('serverPort').value),
+        username: document.getElementById('serverUsername').value.trim(),
+        gpu_enabled: document.getElementById('serverGpuEnabled').checked
+    };
+
+    // 验证必填字段
+    if (!serverData.name || !serverData.host || !serverData.username) {
+        utils.showAlert('请填写所有必填字段', 'warning');
+        return;
+    }
+
+    // 添加认证信息
+    if (authMethod === 'password') {
+        const password = document.getElementById('serverPassword').value;
+        if (!isEditMode && !password) {
+            utils.showAlert('请输入密码', 'warning');
+            return;
+        }
+        if (password) {  // 编辑模式下，只有提供了新密码才更新
+            serverData.password = password;
+        }
+    } else {
+        serverData.key_file = document.getElementById('serverKeyFile').value.trim();
+        if (!serverData.key_file) {
+            utils.showAlert('请输入SSH密钥文件路径', 'warning');
+            return;
+        }
+    }
+
+    let result;
+    if (isEditMode) {
+        // 更新服务器
+        result = await utils.apiRequest(`/api/servers/${originalName}/update`, {
+            method: 'PUT',
+            body: JSON.stringify(serverData)
+        });
+    } else {
+        // 添加服务器
+        result = await utils.apiRequest('/api/servers/add', {
+            method: 'POST',
+            body: JSON.stringify(serverData)
+        });
+    }
+
+    if (result.success) {
+        utils.showAlert(result.message, 'success');
+        bootstrap.Modal.getInstance(document.getElementById('serverModal')).hide();
+        loadServers();
+    } else {
+        utils.showAlert(result.error || '操作失败', 'danger');
+    }
+}
+
+async function deleteServer(serverName) {
+    if (!confirm(`确定要删除服务器 "${serverName}" 吗？此操作不可恢复。`)) {
+        return;
+    }
+
+    const result = await utils.apiRequest(`/api/servers/${serverName}/delete`, {
+        method: 'DELETE'
+    });
+
+    if (result.success) {
+        utils.showAlert(result.message, 'success');
+        loadServers();
+    } else {
+        utils.showAlert(result.error || '删除失败', 'danger');
+    }
+}
+
 async function loadServers() {
     const container = document.getElementById('serversContainer');
     container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
@@ -37,23 +272,34 @@ async function loadServers() {
     const result = await utils.apiRequest('/api/servers');
 
     if (!result.success || result.servers.length === 0) {
-        container.innerHTML = '<div class="alert alert-warning">未配置服务器</div>';
+        container.innerHTML = '<div class="alert alert-warning">未配置服务器，请点击"添加服务器"按钮添加。</div>';
         return;
     }
 
     const html = result.servers.map(server => `
         <div class="card mb-3">
             <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="bi bi-${server.gpu_enabled ? 'gpu-card text-success' : 'server text-primary'}"></i>
-                    ${server.name}
-                    ${server.gpu_enabled ? '<span class="badge bg-success ms-2">GPU</span>' : ''}
-                </h5>
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-${server.gpu_enabled ? 'gpu-card text-success' : 'server text-primary'}"></i>
+                        ${server.name}
+                        ${server.gpu_enabled ? '<span class="badge bg-success ms-2">GPU</span>' : ''}
+                    </h5>
+                    <div>
+                        <button class="btn btn-sm btn-warning" onclick='showEditServerModal(${JSON.stringify(server).replace(/'/g, "&#39;")})'>
+                            <i class="bi bi-pencil"></i> 编辑
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteServer('${server.name}')">
+                            <i class="bi bi-trash"></i> 删除
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6">
                         <p><strong>地址:</strong> ${server.host}:${server.port}</p>
+                        <p><strong>用户名:</strong> ${server.username}</p>
                         <p><strong>描述:</strong> ${server.description || '无'}</p>
                     </div>
                     <div class="col-md-6 text-end">

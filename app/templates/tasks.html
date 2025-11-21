@@ -139,6 +139,16 @@
                 <div id="step3" class="step-content" style="display:none;">
                     <h6><i class="bi bi-3-circle"></i> 填写监控信息</h6>
 
+                    <!-- SMTP 配置提醒 -->
+                    <div id="smtpWarning" class="alert alert-warning" style="display:none;">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>邮件通知未配置</strong>
+                        <p class="mb-2">需要配置 SMTP 邮件服务才能接收任务完成通知。</p>
+                        <button class="btn btn-sm btn-primary" onclick="showSMTPConfigModal()">
+                            <i class="bi bi-gear"></i> 立即配置
+                        </button>
+                    </div>
+
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
@@ -226,6 +236,70 @@
         </div>
     </div>
 </div>
+
+<!-- SMTP 配置 Modal -->
+<div class="modal fade" id="smtpConfigModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-envelope-gear"></i> 配置邮件通知</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    配置 SMTP 邮件服务后，任务完成时会自动发送通知邮件。
+                </div>
+
+                <div class="mb-3">
+                    <label for="smtpServer" class="form-label">SMTP 服务器 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="smtpServer" placeholder="例如: smtp.gmail.com">
+                    <div class="form-text">常用: Gmail(smtp.gmail.com), QQ(smtp.qq.com), 163(smtp.163.com)</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="smtpPort" class="form-label">SMTP 端口 <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="smtpPort" value="587" placeholder="587">
+                    <div class="form-text">常用端口: 587(TLS) 或 465(SSL)</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="smtpUsername" class="form-label">邮箱账号 <span class="text-danger">*</span></label>
+                    <input type="email" class="form-control" id="smtpUsername" placeholder="your@example.com">
+                </div>
+
+                <div class="mb-3">
+                    <label for="smtpPassword" class="form-label">邮箱密码/授权码 <span class="text-danger">*</span></label>
+                    <input type="password" class="form-control" id="smtpPassword" placeholder="请输入密码或授权码">
+                    <div class="form-text">QQ邮箱和163邮箱需要使用授权码，不是登录密码</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="smtpFrom" class="form-label">发件人显示名称</label>
+                    <input type="text" class="form-control" id="smtpFrom" placeholder="留空则使用邮箱账号">
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="smtpUseTLS" checked>
+                    <label class="form-check-label" for="smtpUseTLS">
+                        使用 TLS 加密
+                    </label>
+                </div>
+
+                <div id="smtpTestResult" class="alert" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-info" onclick="testSMTPConfig()">
+                    <i class="bi bi-envelope-check"></i> 测试配置
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveSMTPConfig()">
+                    <i class="bi bi-save"></i> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -236,6 +310,7 @@ let selectedGPUs = [];
 let currentStep = 1;
 let savedEmails = '';
 let monitorType = 'process';  // 'process' 或 'gpu_idle'
+let smtpConfigured = false;  // SMTP 是否已配置
 
 async function loadServers() {
     const result = await utils.apiRequest('/api/servers');
@@ -253,6 +328,122 @@ async function loadUserPrefs() {
     if (prefs.notify_emails) {
         savedEmails = prefs.notify_emails;
         document.getElementById('notifyEmails').value = savedEmails;
+    }
+}
+
+async function checkSMTPConfig() {
+    /**检查SMTP配置状态*/
+    const result = await utils.apiRequest('/api/email/status');
+    if (result.success) {
+        smtpConfigured = result.configured;
+
+        // 如果未配置，显示警告
+        const warning = document.getElementById('smtpWarning');
+        if (!smtpConfigured && warning) {
+            warning.style.display = 'block';
+        } else if (warning) {
+            warning.style.display = 'none';
+        }
+    }
+}
+
+function showSMTPConfigModal() {
+    /**显示SMTP配置对话框*/
+    // 尝试加载现有配置
+    utils.apiRequest('/api/email/status').then(result => {
+        if (result.success && result.config) {
+            document.getElementById('smtpServer').value = result.config.smtp_server || '';
+            document.getElementById('smtpPort').value = result.config.smtp_port || 587;
+            document.getElementById('smtpUsername').value = result.config.smtp_username || '';
+            document.getElementById('smtpFrom').value = result.config.smtp_from || '';
+            document.getElementById('smtpUseTLS').checked = result.config.smtp_use_tls !== false;
+        }
+    });
+
+    new bootstrap.Modal(document.getElementById('smtpConfigModal')).show();
+}
+
+async function saveSMTPConfig() {
+    /**保存SMTP配置*/
+    const config = {
+        smtp_server: document.getElementById('smtpServer').value.trim(),
+        smtp_port: parseInt(document.getElementById('smtpPort').value),
+        smtp_username: document.getElementById('smtpUsername').value.trim(),
+        smtp_password: document.getElementById('smtpPassword').value,
+        smtp_from: document.getElementById('smtpFrom').value.trim(),
+        smtp_use_tls: document.getElementById('smtpUseTLS').checked
+    };
+
+    // 验证必填字段
+    if (!config.smtp_server || !config.smtp_username || !config.smtp_password) {
+        utils.showAlert('请填写所有必填字段', 'warning');
+        return;
+    }
+
+    const result = await utils.apiRequest('/api/email/config', {
+        method: 'POST',
+        body: JSON.stringify(config)
+    });
+
+    if (result.success) {
+        utils.showAlert('SMTP 配置已保存', 'success');
+        smtpConfigured = true;
+        document.getElementById('smtpWarning').style.display = 'none';
+        bootstrap.Modal.getInstance(document.getElementById('smtpConfigModal')).hide();
+    } else {
+        utils.showAlert(result.error || '保存失败', 'danger');
+    }
+}
+
+async function testSMTPConfig() {
+    /**测试SMTP配置*/
+    const config = {
+        smtp_server: document.getElementById('smtpServer').value.trim(),
+        smtp_port: parseInt(document.getElementById('smtpPort').value),
+        smtp_username: document.getElementById('smtpUsername').value.trim(),
+        smtp_password: document.getElementById('smtpPassword').value,
+        smtp_from: document.getElementById('smtpFrom').value.trim(),
+        smtp_use_tls: document.getElementById('smtpUseTLS').checked
+    };
+
+    // 验证必填字段
+    if (!config.smtp_server || !config.smtp_username || !config.smtp_password) {
+        utils.showAlert('请填写所有必填字段', 'warning');
+        return;
+    }
+
+    // 先保存配置
+    const saveResult = await utils.apiRequest('/api/email/config', {
+        method: 'POST',
+        body: JSON.stringify(config)
+    });
+
+    if (!saveResult.success) {
+        utils.showAlert(saveResult.error || '保存配置失败', 'danger');
+        return;
+    }
+
+    // 发送测试邮件
+    const resultDiv = document.getElementById('smtpTestResult');
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'alert alert-info';
+    resultDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> 正在发送测试邮件...';
+
+    const testResult = await utils.apiRequest('/api/email/send', {
+        method: 'POST',
+        body: JSON.stringify({
+            to_emails: [config.smtp_username],
+            subject: 'GPU 服务器管理系统 - 测试邮件',
+            body: '这是一封测试邮件，如果您收到此邮件，说明 SMTP 配置成功！'
+        })
+    });
+
+    if (testResult.success) {
+        resultDiv.className = 'alert alert-success';
+        resultDiv.innerHTML = '<i class="bi bi-check-circle"></i> ' + testResult.message;
+    } else {
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.innerHTML = '<i class="bi bi-x-circle"></i> ' + (testResult.error || '发送失败');
     }
 }
 
@@ -437,6 +628,11 @@ function goToStep(step) {
 
     // 显示当前步骤
     document.getElementById(`step${step}`).style.display = 'block';
+
+    // 步骤3：检查SMTP配置
+    if (step === 3) {
+        checkSMTPConfig();
+    }
 
     // 更新进度条
     const progress = document.getElementById('stepProgress');

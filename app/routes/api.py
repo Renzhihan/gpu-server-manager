@@ -47,6 +47,164 @@ def list_servers():
     return jsonify({'success': True, 'servers': servers})
 
 
+@bp.route('/servers/add', methods=['POST'])
+def add_server():
+    """添加服务器"""
+    import yaml
+
+    data = request.get_json()
+
+    # 验证必填字段
+    required_fields = ['name', 'host', 'port', 'username']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({'success': False, 'error': f'缺少必填字段: {field}'}), 400
+
+    # 验证密码或密钥至少提供一个
+    if not data.get('password') and not data.get('key_file'):
+        return jsonify({'success': False, 'error': '必须提供密码或SSH密钥文件路径'}), 400
+
+    try:
+        # 读取现有配置
+        servers_config_path = Config.SERVERS_CONFIG
+        with open(servers_config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f) or {}
+
+        if 'servers' not in config:
+            config['servers'] = []
+
+        # 检查服务器名称是否已存在
+        if any(s['name'] == data['name'] for s in config['servers']):
+            return jsonify({'success': False, 'error': f'服务器名称 "{data["name"]}" 已存在'}), 400
+
+        # 构建新服务器配置
+        new_server = {
+            'name': data['name'],
+            'host': data['host'],
+            'port': int(data['port']),
+            'username': data['username'],
+            'gpu_enabled': data.get('gpu_enabled', True),
+            'description': data.get('description', '')
+        }
+
+        if data.get('password'):
+            new_server['password'] = data['password']
+        if data.get('key_file'):
+            new_server['key_file'] = data['key_file']
+
+        # 添加到配置
+        config['servers'].append(new_server)
+
+        # 保存配置
+        with open(servers_config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # 重新加载服务器配置
+        ssh_pool.reload_servers()
+
+        return jsonify({'success': True, 'message': '服务器已添加'})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'添加服务器失败: {str(e)}'}), 500
+
+
+@bp.route('/servers/<server_name>/update', methods=['PUT'])
+def update_server(server_name):
+    """更新服务器配置"""
+    import yaml
+
+    data = request.get_json()
+
+    try:
+        # 读取现有配置
+        servers_config_path = Config.SERVERS_CONFIG
+        with open(servers_config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f) or {}
+
+        if 'servers' not in config:
+            return jsonify({'success': False, 'error': '服务器配置文件无效'}), 500
+
+        # 查找要更新的服务器
+        server_found = False
+        for i, server in enumerate(config['servers']):
+            if server['name'] == server_name:
+                server_found = True
+
+                # 更新字段
+                if 'host' in data:
+                    config['servers'][i]['host'] = data['host']
+                if 'port' in data:
+                    config['servers'][i]['port'] = int(data['port'])
+                if 'username' in data:
+                    config['servers'][i]['username'] = data['username']
+                if 'password' in data:
+                    config['servers'][i]['password'] = data['password']
+                if 'key_file' in data:
+                    config['servers'][i]['key_file'] = data['key_file']
+                if 'gpu_enabled' in data:
+                    config['servers'][i]['gpu_enabled'] = data['gpu_enabled']
+                if 'description' in data:
+                    config['servers'][i]['description'] = data['description']
+
+                # 如果提供了新名称，则更新名称
+                if 'name' in data and data['name'] != server_name:
+                    # 检查新名称是否已存在
+                    if any(s['name'] == data['name'] for s in config['servers'] if s['name'] != server_name):
+                        return jsonify({'success': False, 'error': f'服务器名称 "{data["name"]}" 已存在'}), 400
+                    config['servers'][i]['name'] = data['name']
+
+                break
+
+        if not server_found:
+            return jsonify({'success': False, 'error': '服务器不存在'}), 404
+
+        # 保存配置
+        with open(servers_config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # 重新加载服务器配置
+        ssh_pool.reload_servers()
+
+        return jsonify({'success': True, 'message': '服务器配置已更新'})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'更新服务器失败: {str(e)}'}), 500
+
+
+@bp.route('/servers/<server_name>/delete', methods=['DELETE'])
+def delete_server(server_name):
+    """删除服务器"""
+    import yaml
+
+    try:
+        # 读取现有配置
+        servers_config_path = Config.SERVERS_CONFIG
+        with open(servers_config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f) or {}
+
+        if 'servers' not in config:
+            return jsonify({'success': False, 'error': '服务器配置文件无效'}), 500
+
+        # 查找并删除服务器
+        original_count = len(config['servers'])
+        config['servers'] = [s for s in config['servers'] if s['name'] != server_name]
+
+        if len(config['servers']) == original_count:
+            return jsonify({'success': False, 'error': '服务器不存在'}), 404
+
+        # 保存配置
+        with open(servers_config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # 重新加载服务器配置
+        ssh_pool.reload_servers()
+
+        return jsonify({'success': True, 'message': '服务器已删除'})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'删除服务器失败: {str(e)}'}), 500
+
+
 @bp.route('/servers/reload', methods=['POST'])
 def reload_servers():
     """重新加载服务器配置"""
@@ -596,13 +754,60 @@ def delete_task(task_id):
 @bp.route('/email/status', methods=['GET'])
 def email_status():
     """检查邮件配置状态"""
-    is_configured = bool(Config.SMTP_USERNAME and Config.SMTP_PASSWORD)
+    from app.services.email_service import EmailService
+
+    smtp_config = EmailService.get_smtp_config()
+    is_configured = bool(smtp_config.get('smtp_username') and smtp_config.get('smtp_password'))
+
     return jsonify({
         'success': True,
         'configured': is_configured,
-        'smtp_server': Config.SMTP_SERVER if is_configured else None,
-        'smtp_from': Config.SMTP_FROM or Config.SMTP_USERNAME if is_configured else None
+        'config': {
+            'smtp_server': smtp_config.get('smtp_server', ''),
+            'smtp_port': smtp_config.get('smtp_port', 587),
+            'smtp_username': smtp_config.get('smtp_username', ''),
+            'smtp_from': smtp_config.get('smtp_from', ''),
+            'smtp_use_tls': smtp_config.get('smtp_use_tls', True)
+        } if is_configured else None
     })
+
+
+@bp.route('/email/config', methods=['POST'])
+def save_email_config():
+    """保存邮件配置"""
+    from app.services.email_service import EmailService
+
+    data = request.get_json()
+
+    # 验证必填字段
+    required_fields = ['smtp_server', 'smtp_port', 'smtp_username', 'smtp_password']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({
+                'success': False,
+                'error': f'缺少必填字段: {field}'
+            }), 400
+
+    # 保存配置
+    config = {
+        'smtp_server': data['smtp_server'],
+        'smtp_port': int(data['smtp_port']),
+        'smtp_username': data['smtp_username'],
+        'smtp_password': data['smtp_password'],
+        'smtp_from': data.get('smtp_from', data['smtp_username']),
+        'smtp_use_tls': data.get('smtp_use_tls', True)
+    }
+
+    if EmailService.save_smtp_config(config):
+        return jsonify({
+            'success': True,
+            'message': 'SMTP 配置已保存'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': '保存配置失败'
+        }), 500
 
 
 @bp.route('/email/send', methods=['POST'])

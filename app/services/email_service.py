@@ -1,12 +1,60 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import List, Dict
+from typing import List, Dict, Optional
 from config.settings import Config
+import json
+import os
 
 
 class EmailService:
     """邮件通知服务"""
+
+    SMTP_CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../../data/smtp_config.json')
+
+    @staticmethod
+    def load_smtp_config() -> Optional[Dict]:
+        """加载 SMTP 配置"""
+        try:
+            if os.path.exists(EmailService.SMTP_CONFIG_FILE):
+                with open(EmailService.SMTP_CONFIG_FILE, 'r') as f:
+                    return json.load(f)
+        except:
+            pass
+        return None
+
+    @staticmethod
+    def save_smtp_config(config: Dict) -> bool:
+        """保存 SMTP 配置"""
+        try:
+            os.makedirs(os.path.dirname(EmailService.SMTP_CONFIG_FILE), exist_ok=True)
+            with open(EmailService.SMTP_CONFIG_FILE, 'w') as f:
+                json.dump(config, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"保存 SMTP 配置失败: {e}")
+            return False
+
+    @staticmethod
+    def get_smtp_config() -> Dict:
+        """获取 SMTP 配置（优先使用用户配置，否则使用环境变量）"""
+        user_config = EmailService.load_smtp_config()
+
+        if user_config and user_config.get('smtp_username'):
+            return user_config
+
+        # 回退到环境变量配置
+        if Config.SMTP_USERNAME and Config.SMTP_PASSWORD:
+            return {
+                'smtp_server': Config.SMTP_SERVER,
+                'smtp_port': Config.SMTP_PORT,
+                'smtp_username': Config.SMTP_USERNAME,
+                'smtp_password': Config.SMTP_PASSWORD,
+                'smtp_from': Config.SMTP_FROM or Config.SMTP_USERNAME,
+                'smtp_use_tls': Config.SMTP_USE_TLS
+            }
+
+        return {}
 
     @staticmethod
     def send_email(to_emails: List[str], subject: str, body: str, html: bool = False) -> Dict:
@@ -25,17 +73,19 @@ class EmailService:
             'error': str
         }
         """
-        if not Config.SMTP_USERNAME or not Config.SMTP_PASSWORD:
+        smtp_config = EmailService.get_smtp_config()
+
+        if not smtp_config.get('smtp_username') or not smtp_config.get('smtp_password'):
             return {
                 'success': False,
                 'message': '',
-                'error': '邮件配置未完成，请检查 SMTP 设置'
+                'error': '邮件配置未完成，请先配置 SMTP 设置'
             }
 
         try:
             # 创建邮件对象
             msg = MIMEMultipart('alternative')
-            msg['From'] = Config.SMTP_FROM or Config.SMTP_USERNAME
+            msg['From'] = smtp_config.get('smtp_from', smtp_config['smtp_username'])
             msg['To'] = ', '.join(to_emails)
             msg['Subject'] = subject
 
@@ -47,10 +97,13 @@ class EmailService:
             msg.attach(part)
 
             # 连接 SMTP 服务器并发送
-            with smtplib.SMTP(Config.SMTP_SERVER, Config.SMTP_PORT, timeout=30) as server:
-                if Config.SMTP_USE_TLS:
+            smtp_server = smtp_config.get('smtp_server', 'smtp.gmail.com')
+            smtp_port = smtp_config.get('smtp_port', 587)
+
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+                if smtp_config.get('smtp_use_tls', True):
                     server.starttls()
-                server.login(Config.SMTP_USERNAME, Config.SMTP_PASSWORD)
+                server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
                 server.send_message(msg)
 
             return {

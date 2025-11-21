@@ -157,7 +157,14 @@ class EmailService:
         try:
             # 创建邮件对象
             msg = MIMEMultipart('alternative')
-            msg['From'] = smtp_config.get('smtp_from', smtp_config['smtp_username'])
+
+            # 获取发件人地址（确保格式正确）
+            from_email = smtp_config.get('smtp_from') or smtp_config['smtp_username']
+            # 如果 smtp_from 只是名称，使用 username 作为邮箱
+            if '@' not in from_email:
+                from_email = smtp_config['smtp_username']
+
+            msg['From'] = from_email
             msg['To'] = ', '.join(to_emails)
             msg['Subject'] = subject
 
@@ -177,7 +184,7 @@ class EmailService:
             print(f"[邮件调试] 尝试发送邮件:")
             print(f"  服务器: {smtp_server}:{smtp_port}")
             print(f"  加密: {'SSL' if use_ssl or smtp_port == 465 else 'TLS' if use_tls else '无'}")
-            print(f"  发件人: {smtp_config['smtp_username']}")
+            print(f"  发件人: {from_email}")
             print(f"  收件人: {to_emails}")
 
             # 根据配置选择连接方式
@@ -188,7 +195,8 @@ class EmailService:
                     print(f"[邮件调试] SSL 连接成功")
                     server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
                     print(f"[邮件调试] 登录成功")
-                    server.send_message(msg)
+                    # 使用 sendmail 代替 send_message，更明确地指定发送者和接收者
+                    server.sendmail(from_email, to_emails, msg.as_string())
                     print(f"[邮件调试] 邮件发送成功")
             else:
                 # 使用 STARTTLS（端口 587）
@@ -202,7 +210,8 @@ class EmailService:
                         server.ehlo()  # TLS 后重新标识
                     server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
                     print(f"[邮件调试] 登录成功")
-                    server.send_message(msg)
+                    # 使用 sendmail 代替 send_message
+                    server.sendmail(from_email, to_emails, msg.as_string())
                     print(f"[邮件调试] 邮件发送成功")
 
             return {

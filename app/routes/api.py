@@ -767,8 +767,20 @@ def email_status():
             'smtp_port': smtp_config.get('smtp_port', 587),
             'smtp_username': smtp_config.get('smtp_username', ''),
             'smtp_from': smtp_config.get('smtp_from', ''),
-            'smtp_use_tls': smtp_config.get('smtp_use_tls', True)
+            'smtp_use_tls': smtp_config.get('smtp_use_tls', True),
+            'smtp_use_ssl': smtp_config.get('smtp_use_ssl', False)
         } if is_configured else None
+    })
+
+
+@bp.route('/email/templates', methods=['GET'])
+def email_templates():
+    """获取常见邮箱服务商配置模板"""
+    from app.services.email_service import EmailService
+
+    return jsonify({
+        'success': True,
+        'templates': EmailService.SMTP_TEMPLATES
     })
 
 
@@ -795,7 +807,8 @@ def save_email_config():
         'smtp_username': data['smtp_username'],
         'smtp_password': data['smtp_password'],
         'smtp_from': data.get('smtp_from', data['smtp_username']),
-        'smtp_use_tls': data.get('smtp_use_tls', True)
+        'smtp_use_tls': data.get('smtp_use_tls', True),
+        'smtp_use_ssl': data.get('smtp_use_ssl', False)
     }
 
     if EmailService.save_smtp_config(config):

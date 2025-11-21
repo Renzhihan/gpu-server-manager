@@ -239,7 +239,7 @@
 
 <!-- SMTP 配置 Modal -->
 <div class="modal fade" id="smtpConfigModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-envelope-gear"></i> 配置邮件通知</h5>
@@ -251,16 +251,47 @@
                     配置 SMTP 邮件服务后，任务完成时会自动发送通知邮件。
                 </div>
 
+                <!-- 快速配置选择 -->
+                <div class="mb-3">
+                    <label class="form-label">
+                        <i class="bi bi-lightning"></i> 快速配置（可选）
+                    </label>
+                    <div class="row g-2" id="emailTemplates">
+                        <div class="col-12 text-center">
+                            <div class="spinner-border spinner-border-sm"></div> 加载中...
+                        </div>
+                    </div>
+                </div>
+
+                <hr>
+
                 <div class="mb-3">
                     <label for="smtpServer" class="form-label">SMTP 服务器 <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="smtpServer" placeholder="例如: smtp.gmail.com">
-                    <div class="form-text">常用: Gmail(smtp.gmail.com), QQ(smtp.qq.com), 163(smtp.163.com)</div>
                 </div>
 
-                <div class="mb-3">
-                    <label for="smtpPort" class="form-label">SMTP 端口 <span class="text-danger">*</span></label>
-                    <input type="number" class="form-control" id="smtpPort" value="587" placeholder="587">
-                    <div class="form-text">常用端口: 587(TLS) 或 465(SSL)</div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="smtpPort" class="form-label">SMTP 端口 <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="smtpPort" value="587" placeholder="587">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">加密方式</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="encryptionType" id="useTLS" value="tls" checked>
+                                    <label class="form-check-label" for="useTLS">TLS (587)</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="encryptionType" id="useSSL" value="ssl">
+                                    <label class="form-check-label" for="useSSL">SSL (465)</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="mb-3">
@@ -271,19 +302,12 @@
                 <div class="mb-3">
                     <label for="smtpPassword" class="form-label">邮箱密码/授权码 <span class="text-danger">*</span></label>
                     <input type="password" class="form-control" id="smtpPassword" placeholder="请输入密码或授权码">
-                    <div class="form-text">QQ邮箱和163邮箱需要使用授权码，不是登录密码</div>
+                    <div class="form-text" id="passwordHint">QQ邮箱和163邮箱需要使用授权码，不是登录密码</div>
                 </div>
 
                 <div class="mb-3">
                     <label for="smtpFrom" class="form-label">发件人显示名称</label>
                     <input type="text" class="form-control" id="smtpFrom" placeholder="留空则使用邮箱账号">
-                </div>
-
-                <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" id="smtpUseTLS" checked>
-                    <label class="form-check-label" for="smtpUseTLS">
-                        使用 TLS 加密
-                    </label>
                 </div>
 
                 <div id="smtpTestResult" class="alert" style="display:none;"></div>
@@ -349,6 +373,9 @@ async function checkSMTPConfig() {
 
 function showSMTPConfigModal() {
     /**显示SMTP配置对话框*/
+    // 加载邮箱模板
+    loadEmailTemplates();
+
     // 尝试加载现有配置
     utils.apiRequest('/api/email/status').then(result => {
         if (result.success && result.config) {
@@ -356,22 +383,80 @@ function showSMTPConfigModal() {
             document.getElementById('smtpPort').value = result.config.smtp_port || 587;
             document.getElementById('smtpUsername').value = result.config.smtp_username || '';
             document.getElementById('smtpFrom').value = result.config.smtp_from || '';
-            document.getElementById('smtpUseTLS').checked = result.config.smtp_use_tls !== false;
+
+            // 设置加密方式
+            const useSSL = result.config.smtp_use_ssl || result.config.smtp_port == 465;
+            if (useSSL) {
+                document.getElementById('useSSL').checked = true;
+            } else {
+                document.getElementById('useTLS').checked = true;
+            }
         }
     });
 
     new bootstrap.Modal(document.getElementById('smtpConfigModal')).show();
 }
 
+async function loadEmailTemplates() {
+    /**加载邮箱服务商模板*/
+    const container = document.getElementById('emailTemplates');
+
+    try {
+        const result = await utils.apiRequest('/api/email/templates');
+        if (result.success && result.templates) {
+            const templates = result.templates;
+            const html = Object.entries(templates).map(([key, tmpl]) => `
+                <div class="col-md-4 col-6">
+                    <button class="btn btn-outline-primary btn-sm w-100" onclick="applyEmailTemplate('${key}')">
+                        ${tmpl.name}
+                    </button>
+                </div>
+            `).join('');
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = '<div class="col-12 text-muted text-center">无可用模板</div>';
+        }
+    } catch (e) {
+        container.innerHTML = '<div class="col-12 text-danger text-center">加载失败</div>';
+    }
+}
+
+async function applyEmailTemplate(templateKey) {
+    /**应用邮箱模板配置*/
+    const result = await utils.apiRequest('/api/email/templates');
+    if (result.success && result.templates[templateKey]) {
+        const tmpl = result.templates[templateKey];
+
+        // 应用配置
+        document.getElementById('smtpServer').value = tmpl.smtp_server;
+        document.getElementById('smtpPort').value = tmpl.smtp_port;
+
+        // 设置加密方式
+        if (tmpl.smtp_use_ssl || tmpl.smtp_port == 465) {
+            document.getElementById('useSSL').checked = true;
+        } else {
+            document.getElementById('useTLS').checked = true;
+        }
+
+        // 更新密码提示
+        document.getElementById('passwordHint').textContent = tmpl.note;
+
+        utils.showAlert(`已应用 ${tmpl.name} 配置模板`, 'success');
+    }
+}
+
 async function saveSMTPConfig() {
     /**保存SMTP配置*/
+    const encryptionType = document.querySelector('input[name="encryptionType"]:checked').value;
+
     const config = {
         smtp_server: document.getElementById('smtpServer').value.trim(),
         smtp_port: parseInt(document.getElementById('smtpPort').value),
         smtp_username: document.getElementById('smtpUsername').value.trim(),
         smtp_password: document.getElementById('smtpPassword').value,
         smtp_from: document.getElementById('smtpFrom').value.trim(),
-        smtp_use_tls: document.getElementById('smtpUseTLS').checked
+        smtp_use_tls: encryptionType === 'tls',
+        smtp_use_ssl: encryptionType === 'ssl'
     };
 
     // 验证必填字段
@@ -397,13 +482,16 @@ async function saveSMTPConfig() {
 
 async function testSMTPConfig() {
     /**测试SMTP配置*/
+    const encryptionType = document.querySelector('input[name="encryptionType"]:checked').value;
+
     const config = {
         smtp_server: document.getElementById('smtpServer').value.trim(),
         smtp_port: parseInt(document.getElementById('smtpPort').value),
         smtp_username: document.getElementById('smtpUsername').value.trim(),
         smtp_password: document.getElementById('smtpPassword').value,
         smtp_from: document.getElementById('smtpFrom').value.trim(),
-        smtp_use_tls: document.getElementById('smtpUseTLS').checked
+        smtp_use_tls: encryptionType === 'tls',
+        smtp_use_ssl: encryptionType === 'ssl'
     };
 
     // 验证必填字段

@@ -1,4 +1,5 @@
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Optional
@@ -11,6 +12,58 @@ class EmailService:
     """邮件通知服务"""
 
     SMTP_CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../../data/smtp_config.json')
+
+    # 常见邮箱服务商配置模板
+    SMTP_TEMPLATES = {
+        'gmail': {
+            'name': 'Gmail',
+            'smtp_server': 'smtp.gmail.com',
+            'smtp_port': 587,
+            'smtp_use_tls': True,
+            'smtp_use_ssl': False,
+            'note': '需要开启"两步验证"并使用"应用专用密码"'
+        },
+        'qq': {
+            'name': 'QQ邮箱',
+            'smtp_server': 'smtp.qq.com',
+            'smtp_port': 587,
+            'smtp_use_tls': True,
+            'smtp_use_ssl': False,
+            'note': '密码处需填写授权码，不是QQ密码'
+        },
+        '163': {
+            'name': '163邮箱',
+            'smtp_server': 'smtp.163.com',
+            'smtp_port': 465,
+            'smtp_use_tls': False,
+            'smtp_use_ssl': True,
+            'note': '密码处需填写授权码，不是登录密码'
+        },
+        'outlook': {
+            'name': 'Outlook/Hotmail',
+            'smtp_server': 'smtp.office365.com',
+            'smtp_port': 587,
+            'smtp_use_tls': True,
+            'smtp_use_ssl': False,
+            'note': '使用账号密码即可'
+        },
+        '126': {
+            'name': '126邮箱',
+            'smtp_server': 'smtp.126.com',
+            'smtp_port': 465,
+            'smtp_use_tls': False,
+            'smtp_use_ssl': True,
+            'note': '密码处需填写授权码'
+        },
+        'sina': {
+            'name': '新浪邮箱',
+            'smtp_server': 'smtp.sina.com',
+            'smtp_port': 465,
+            'smtp_use_tls': False,
+            'smtp_use_ssl': True,
+            'note': '使用账号密码'
+        }
+    }
 
     @staticmethod
     def load_smtp_config() -> Optional[Dict]:
@@ -51,7 +104,8 @@ class EmailService:
                 'smtp_username': Config.SMTP_USERNAME,
                 'smtp_password': Config.SMTP_PASSWORD,
                 'smtp_from': Config.SMTP_FROM or Config.SMTP_USERNAME,
-                'smtp_use_tls': Config.SMTP_USE_TLS
+                'smtp_use_tls': Config.SMTP_USE_TLS,
+                'smtp_use_ssl': False
             }
 
         return {}
@@ -99,12 +153,25 @@ class EmailService:
             # 连接 SMTP 服务器并发送
             smtp_server = smtp_config.get('smtp_server', 'smtp.gmail.com')
             smtp_port = smtp_config.get('smtp_port', 587)
+            use_tls = smtp_config.get('smtp_use_tls', True)
+            use_ssl = smtp_config.get('smtp_use_ssl', False)
 
-            with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
-                if smtp_config.get('smtp_use_tls', True):
-                    server.starttls()
-                server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
-                server.send_message(msg)
+            # 根据配置选择连接方式
+            if use_ssl or smtp_port == 465:
+                # 使用 SSL 连接（端口 465）
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=context) as server:
+                    server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+                    server.send_message(msg)
+            else:
+                # 使用 STARTTLS（端口 587）
+                with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+                    server.ehlo()  # 标识客户端
+                    if use_tls:
+                        server.starttls()
+                        server.ehlo()  # TLS 后重新标识
+                    server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+                    server.send_message(msg)
 
             return {
                 'success': True,
@@ -112,6 +179,29 @@ class EmailService:
                 'error': ''
             }
 
+        except smtplib.SMTPAuthenticationError as e:
+            error_msg = '认证失败：用户名或密码错误'
+            if 'qq.com' in smtp_config.get('smtp_server', ''):
+                error_msg += '（QQ邮箱需要使用授权码，不是QQ密码）'
+            elif '163.com' in smtp_config.get('smtp_server', '') or '126.com' in smtp_config.get('smtp_server', ''):
+                error_msg += '（网易邮箱需要使用授权码）'
+            return {
+                'success': False,
+                'message': '',
+                'error': error_msg
+            }
+        except smtplib.SMTPConnectError as e:
+            return {
+                'success': False,
+                'message': '',
+                'error': f'连接失败：无法连接到SMTP服务器 {smtp_server}:{smtp_port}'
+            }
+        except smtplib.SMTPServerDisconnected as e:
+            return {
+                'success': False,
+                'message': '',
+                'error': f'连接断开：服务器意外关闭连接，请检查端口配置（587用TLS，465用SSL）'
+            }
         except Exception as e:
             return {
                 'success': False,

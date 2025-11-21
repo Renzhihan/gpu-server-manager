@@ -136,6 +136,24 @@ class EmailService:
                 'error': '邮件配置未完成，请先配置 SMTP 设置'
             }
 
+        # 验证和清理收件人邮箱列表
+        if not to_emails or not isinstance(to_emails, list):
+            return {
+                'success': False,
+                'message': '',
+                'error': '收件人邮箱列表格式错误'
+            }
+
+        # 过滤空字符串并清理邮箱地址
+        to_emails = [email.strip() for email in to_emails if email and email.strip()]
+
+        if not to_emails:
+            return {
+                'success': False,
+                'message': '',
+                'error': '收件人邮箱列表为空'
+            }
+
         try:
             # 创建邮件对象
             msg = MIMEMultipart('alternative')
@@ -156,22 +174,36 @@ class EmailService:
             use_tls = smtp_config.get('smtp_use_tls', True)
             use_ssl = smtp_config.get('smtp_use_ssl', False)
 
+            print(f"[邮件调试] 尝试发送邮件:")
+            print(f"  服务器: {smtp_server}:{smtp_port}")
+            print(f"  加密: {'SSL' if use_ssl or smtp_port == 465 else 'TLS' if use_tls else '无'}")
+            print(f"  发件人: {smtp_config['smtp_username']}")
+            print(f"  收件人: {to_emails}")
+
             # 根据配置选择连接方式
             if use_ssl or smtp_port == 465:
                 # 使用 SSL 连接（端口 465）
                 context = ssl.create_default_context()
                 with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=context) as server:
+                    print(f"[邮件调试] SSL 连接成功")
                     server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+                    print(f"[邮件调试] 登录成功")
                     server.send_message(msg)
+                    print(f"[邮件调试] 邮件发送成功")
             else:
                 # 使用 STARTTLS（端口 587）
                 with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+                    print(f"[邮件调试] SMTP 连接成功")
                     server.ehlo()  # 标识客户端
+                    print(f"[邮件调试] EHLO 完成")
                     if use_tls:
                         server.starttls()
+                        print(f"[邮件调试] STARTTLS 完成")
                         server.ehlo()  # TLS 后重新标识
                     server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+                    print(f"[邮件调试] 登录成功")
                     server.send_message(msg)
+                    print(f"[邮件调试] 邮件发送成功")
 
             return {
                 'success': True,
@@ -185,24 +217,37 @@ class EmailService:
                 error_msg += '（QQ邮箱需要使用授权码，不是QQ密码）'
             elif '163.com' in smtp_config.get('smtp_server', '') or '126.com' in smtp_config.get('smtp_server', ''):
                 error_msg += '（网易邮箱需要使用授权码）'
+            print(f"[邮件错误] 认证失败: {str(e)}")
             return {
                 'success': False,
                 'message': '',
                 'error': error_msg
             }
         except smtplib.SMTPConnectError as e:
+            print(f"[邮件错误] 连接失败: {str(e)}")
             return {
                 'success': False,
                 'message': '',
                 'error': f'连接失败：无法连接到SMTP服务器 {smtp_server}:{smtp_port}'
             }
         except smtplib.SMTPServerDisconnected as e:
+            print(f"[邮件错误] 服务器断开: {str(e)}")
             return {
                 'success': False,
                 'message': '',
                 'error': f'连接断开：服务器意外关闭连接，请检查端口配置（587用TLS，465用SSL）'
             }
+        except IndexError as e:
+            print(f"[邮件错误] 索引错误: {str(e)}")
+            return {
+                'success': False,
+                'message': '',
+                'error': f'邮箱地址格式错误，请检查邮箱地址是否正确'
+            }
         except Exception as e:
+            import traceback
+            print(f"[邮件错误] 未知错误: {str(e)}")
+            print(traceback.format_exc())
             return {
                 'success': False,
                 'message': '',

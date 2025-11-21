@@ -327,25 +327,6 @@ pip install -r requirements.txt
 FLASK_ENV=development python run.py
 ```
 
-### 添加新功能
-
-**创建新路由：**
-```python
-# app/routes/api.py
-@bp.route('/your-endpoint', methods=['POST'])
-def your_function():
-    # 业务逻辑
-    return jsonify({'success': True})
-```
-
-**创建新服务：**
-```python
-# app/services/your_service.py
-class YourService:
-    def your_method(self):
-        # 实现逻辑
-        pass
-```
 
 ### 构建Windows EXE
 
@@ -372,14 +353,6 @@ pyinstaller build_windows.spec
 
 本项目采用 [MIT License](LICENSE) 开源协议。
 
-**这意味着您可以：**
-- ✅ 商业使用
-- ✅ 修改代码
-- ✅ 分发副本
-- ✅ 私有使用
-
-**条件：**
-- 📋 保留原作者版权声明
 
 ---
 
@@ -411,11 +384,6 @@ pyinstaller build_windows.spec
 **错误日志**
 （粘贴完整错误信息）
 ```
-
-**联系方式：**
-- 🐛 [提交Bug](https://github.com/Renzhihan/gpu-server-manager/issues/new)
-- 💡 [功能建议](https://github.com/Renzhihan/gpu-server-manager/issues/new)
-- 📧 邮件：通过GitHub联系
 
 ---
 

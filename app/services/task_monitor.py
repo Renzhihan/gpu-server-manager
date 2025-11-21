@@ -192,18 +192,20 @@ class TaskMonitor:
         return True
 
     def _check_gpu_idle_task(self, task: Dict) -> bool:
-        """检查GPU空闲监控任务"""
+        """
+        检查GPU空闲监控任务
+
+        空闲判断标准：显存使用 < 50MB（与GPU监控页面保持一致）
+        逻辑：
+        1. 首次检查时记录初始状态
+        2. 如果GPU非空闲，标记已检测到忙碌状态
+        3. 如果GPU从非空闲变为空闲，发送通知并完成任务
+        4. 如果GPU一直空闲，不发送通知（避免误报）
+        """
         server_name = task['server_name']
         gpu_id = task['gpu_id']
 
-        # 检查指定GPU的显存使用情况
-        # 方法1: 检查该GPU上是否有进程
-        process_cmd = f"nvidia-smi pmon -c 1 -i {gpu_id} 2>/dev/null | awk 'NR>2 && $2 != \"-\" {{print $2}}'"
-        process_result = ssh_pool.execute_command(server_name, process_cmd, timeout=10)
-
-        has_processes = process_result['success'] and process_result['stdout'].strip()
-
-        # 方法2: 检查显存使用
+        # 检查显存使用（与GPU监控保持一致的判断标准）
         memory_cmd = f"nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i {gpu_id}"
         memory_result = ssh_pool.execute_command(server_name, memory_cmd, timeout=10)
 
@@ -214,19 +216,44 @@ class TaskMonitor:
             except:
                 pass
 
-        # GPU空闲条件：无进程 且 显存使用低于50MB
-        is_idle = not has_processes and memory_used < 50
+        # GPU空闲判断：显存使用 < 50MB（与前端 GPU_IDLE_THRESHOLD 一致）
+        GPU_IDLE_THRESHOLD = 50
+        is_idle = memory_used < GPU_IDLE_THRESHOLD
 
-        # 如果GPU非空闲，标记已检测到忙碌状态
+        print(f"[GPU空闲监听] 任务={task['task_name']}, GPU {gpu_id}, 显存={memory_used}MB, 空闲={is_idle}, 曾经忙碌={task.get('gpu_was_busy', False)}")
+
+        # 首次检查：记录初始状态
+        if 'initial_check_done' not in task:
+            task['initial_check_done'] = True
+            if not is_idle:
+                # 初始状态是忙碌的，标记为已检测到忙碌状态
+                task['gpu_was_busy'] = True
+                print(f"[GPU空闲监听] GPU {gpu_id} 初始状态：忙碌（显存 {memory_used}MB）")
+            else:
+                # 初始状态就是空闲的
+                print(f"[GPU空闲监听] GPU {gpu_id} 初始状态：空闲（显存 {memory_used}MB）")
+            return True
+
+        # 如果GPU当前非空闲，标记已检测到忙碌状态
         if not is_idle:
+            if not task.get('gpu_was_busy', False):
+                print(f"[GPU空闲监听] GPU {gpu_id} 检测到忙碌状态（显存 {memory_used}MB）")
             task['gpu_was_busy'] = True
             return True
 
-        # 如果GPU空闲，但之前未检测到忙碌状态，继续等待
+        # 如果GPU当前空闲，但之前从未忙碌过
         if not task.get('gpu_was_busy', False):
-            return True
+            # GPU一直保持空闲，不发送通知（避免误报）
+            print(f"[GPU空闲监听] GPU {gpu_id} 持续空闲，跳过通知")
+            # 可以选择自动完成任务或继续监听
+            # 这里选择自动完成任务，状态标记为超时
+            task['status'] = 'timeout'
+            task['completed_at'] = datetime.now().isoformat()
+            task['email_status'] = 'no_email'
+            return False
 
         # GPU已从忙碌变为空闲，发送通知
+        print(f"[GPU空闲监听] GPU {gpu_id} 从忙碌变为空闲，发送通知")
         task['status'] = 'completed'
         task['completed_at'] = datetime.now().isoformat()
 
@@ -237,7 +264,7 @@ class TaskMonitor:
                 task_name=task['task_name'],
                 server_name=server_name,
                 status='success',
-                details=f"GPU {gpu_id} 已空闲\n显存使用: {memory_used} MB\n完成时间: {task['completed_at']}"
+                details=f"GPU {gpu_id} 已空闲\n显存使用: {memory_used} MB\n空闲阈值: < {GPU_IDLE_THRESHOLD} MB\n完成时间: {task['completed_at']}"
             )
             task['email_status'] = 'sent' if email_result['success'] else 'failed'
             if not email_result['success']:

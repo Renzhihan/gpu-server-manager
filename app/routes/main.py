@@ -1,10 +1,19 @@
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
 from functools import wraps
+import os
 
 bp = Blueprint('main', __name__)
 
-# 管理员密码
-ADMIN_PASSWORD = "admin"
+# 管理员密码 - 从环境变量读取，默认值要求用户修改
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'PLEASE_CHANGE_THIS_PASSWORD_IN_ENV_FILE')
+
+# 安全警告：如果使用默认密码，在控制台显示警告
+if ADMIN_PASSWORD == 'PLEASE_CHANGE_THIS_PASSWORD_IN_ENV_FILE':
+    print("\n" + "="*80)
+    print("⚠️  安全警告：检测到使用默认管理员密码！")
+    print("   请立即修改 .env 文件中的 ADMIN_PASSWORD 为强密码")
+    print("   强密码要求：至少16位，包含大小写字母、数字和特殊字符")
+    print("="*80 + "\n")
 
 
 def login_required(f):

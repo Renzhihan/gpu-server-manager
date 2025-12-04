@@ -53,7 +53,13 @@ class SSHConnectionPool:
 
         server_config = self.servers[server_name]
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # SSH 主机密钥策略：
+        # - WarningPolicy: 记录未知主机但允许连接（推荐用于内网环境）
+        # - AutoAddPolicy: 自动接受未知主机（便捷但不安全，原默认行为）
+        # - RejectPolicy: 拒绝未知主机（最安全但需要预先配置 known_hosts）
+        # 使用 WarningPolicy 在安全性和易用性之间取得平衡
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
         try:
             connect_params = {

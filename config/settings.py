@@ -13,6 +13,15 @@ class Config:
     FLASK_ENV = os.getenv('FLASK_ENV', 'development')
     DEBUG = FLASK_ENV == 'development'
 
+    # 安全警告：检查是否使用了不安全的默认密钥
+    if SECRET_KEY == 'dev-secret-key-change-in-production':
+        print("\n" + "="*80)
+        print("⚠️  安全警告：检测到使用默认 SECRET_KEY！")
+        print("   这会导致 Session 可被伪造，攻击者可绕过认证")
+        print("   请立即在 .env 文件中设置强随机 SECRET_KEY")
+        print("   生成命令: python -c \"import secrets; print(secrets.token_hex(32))\"")
+        print("="*80 + "\n")
+
     # 服务器配置文件路径
     # PyInstaller 打包后优先使用外部配置文件，方便用户修改
     if getattr(sys, 'frozen', False):

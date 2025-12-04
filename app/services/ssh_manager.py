@@ -163,3 +163,5 @@ class SSHConnectionPool:
 
 # 全局 SSH 连接池实例
 ssh_pool = SSHConnectionPool(Config.SERVERS_CONFIG)
+# 向后兼容：提供 ssh_manager 别名
+ssh_manager = ssh_pool

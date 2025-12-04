@@ -72,10 +72,15 @@ if __name__ == '__main__':
             if os.path.exists(cert_file) and os.path.exists(key_file):
                 ssl_context = (cert_file, key_file)
                 protocol = 'https'
+                # 启用 HTTPS 时，设置 SESSION_COOKIE_SECURE
+                app.config['SESSION_COOKIE_SECURE'] = True
                 print("✅ SSL 证书加载成功")
+                print("✅ SESSION_COOKIE_SECURE 已启用（仅通过HTTPS传输Cookie）")
             else:
                 print("❌ SSL 证书未找到！")
-                print("   请先运行: ./generate_ssl_cert.sh")
+                print("   请先生成证书: openssl req -x509 -newkey rsa:4096 -nodes \\")
+                print("                     -keyout ssl/key.pem -out ssl/cert.pem -days 365 \\")
+                print("                     -subj \"/CN=localhost\"")
                 input("\n按回车键退出...")
                 sys.exit(1)
 

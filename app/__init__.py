@@ -2,6 +2,9 @@ from flask import Flask
 from flask_cors import CORS
 from config.settings import config
 import os
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 # SocketIO 实例 (可选依赖)
 socketio = None
@@ -11,8 +14,9 @@ try:
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
-    print("[警告] Flask-SocketIO 未安装，Web 终端功能将不可用")
-    print("       安装命令: pip install Flask-SocketIO==5.3.5")
+    logger = get_logger('app.socketio')
+    logger.warning("Flask-SocketIO 未安装，Web 终端功能将不可用")
+    logger.info("安装命令: pip install Flask-SocketIO==5.3.5")
 
 
 def create_app(config_name=None):
@@ -59,10 +63,11 @@ def create_app(config_name=None):
         try:
             from app.routes.terminal_events import register_terminal_events
             register_terminal_events(socketio)
+            logger.info("终端事件处理模块加载成功")
         except ImportError as exc:
-            print(f"[警告] 终端事件处理模块加载失败: {exc}")
+            logger.error(f"终端事件处理模块加载失败: {exc}")
         except Exception as exc:
-            print(f"[警告] 终端事件注册失败: {exc}")
+            logger.error(f"终端事件注册失败: {exc}")
 
     # 存储功能可用性标志
     app.config['SOCKETIO_AVAILABLE'] = SOCKETIO_AVAILABLE

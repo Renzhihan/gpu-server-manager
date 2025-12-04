@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, session
+from typing import Dict, List, Any, Tuple
 from app.services.ssh_manager import ssh_pool
 from app.services.gpu_monitor import gpu_monitor
 from app.services.docker_manager import docker_manager
@@ -8,40 +9,109 @@ from app.services.email_service import email_service
 from app.services.task_monitor import task_monitor
 from app.services.port_forward import port_forward_manager
 from app.services.audit_logger import audit_logger
+from app.utils.logger import get_logger
 from config.settings import Config
 import json
 import os
+import time
+import psutil
+from datetime import datetime
+
+logger = get_logger(__name__)
 
 bp = Blueprint('api', __name__)
 
+# 应用启动时间
+START_TIME = time.time()
 
-def get_current_user():
-    """获取当前用户"""
+
+def get_current_user() -> str:
+    """获取当前用户角色"""
     return session.get('role', 'anonymous')
+
+
+# ==================== 系统健康检查 API ====================
+
+@bp.route('/health', methods=['GET'])
+def health_check():
+    """
+    健康检查端点（无需认证）
+    用于监控系统、负载均衡器健康检查等
+    """
+    uptime_seconds = int(time.time() - START_TIME)
+
+    # 系统资源使用情况
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+    except Exception:
+        cpu_percent = 0
+        memory = None
+        disk = None
+
+    health_info = {
+        'status': 'healthy',
+        'version': '1.0.10',
+        'timestamp': datetime.now().isoformat(),
+        'uptime': {
+            'seconds': uptime_seconds,
+            'human': format_uptime(uptime_seconds)
+        },
+        'system': {
+            'cpu_percent': cpu_percent,
+            'memory_percent': memory.percent if memory else 0,
+            'disk_percent': disk.percent if disk else 0
+        },
+        'features': {
+            'websocket': True,  # Flask-SocketIO已安装
+            'https': os.path.exists('ssl/cert.pem'),
+            'audit_log': os.path.exists('logs/audit.log')
+        }
+    }
+
+    return jsonify(health_info)
+
+
+def format_uptime(seconds: int) -> str:
+    """格式化运行时间"""
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days}天")
+    if hours > 0:
+        parts.append(f"{hours}小时")
+    if minutes > 0:
+        parts.append(f"{minutes}分钟")
+
+    return ' '.join(parts) if parts else f"{seconds}秒"
 
 # 用户偏好设置文件路径
 USER_PREFS_FILE = os.path.join(os.path.dirname(__file__), '../../data/user_prefs.json')
 
 
-def load_user_prefs():
+def load_user_prefs() -> Dict[str, Any]:
     """加载用户偏好设置"""
     try:
         if os.path.exists(USER_PREFS_FILE):
             with open(USER_PREFS_FILE, 'r') as f:
                 return json.load(f)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"加载用户偏好设置失败: {e}")
     return {}
 
 
-def save_user_prefs(prefs):
+def save_user_prefs(prefs: Dict[str, Any]) -> None:
     """保存用户偏好设置"""
     try:
         os.makedirs(os.path.dirname(USER_PREFS_FILE), exist_ok=True)
         with open(USER_PREFS_FILE, 'w') as f:
             json.dump(prefs, f)
     except Exception as e:
-        print(f"保存用户偏好失败: {e}")
+        logger.error(f"保存用户偏好失败: {e}")
 
 
 # ==================== 服务器管理 API ====================

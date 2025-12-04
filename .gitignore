@@ -40,12 +40,13 @@ Thumbs.db
 # Project specific
 .env
 *.log
-logs/
+logs/  # 审计日志和应用日志
 data/user_prefs.json
 data/smtp_config.json
-ssl/
+ssl/  # SSL证书文件
 flask_session/
 config/servers.yaml  # 包含敏感信息，使用 servers.yaml.example 作为模板
+.configured  # 首次配置标记文件
 
 # Build artifacts
 build/

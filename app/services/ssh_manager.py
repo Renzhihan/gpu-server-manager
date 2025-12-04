@@ -3,6 +3,9 @@ import yaml
 import threading
 from typing import Dict, Optional, List
 from config.settings import Config
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class SSHConnectionPool:
@@ -24,8 +27,9 @@ class SSHConnectionPool:
                     server['name']: server
                     for server in config.get('servers', [])
                 }
+                logger.info(f"成功加载 {len(self.servers)} 个服务器配置")
         except Exception as e:
-            print(f"加载服务器配置失败: {e}")
+            logger.error(f"加载服务器配置失败: {e}")
             self.servers = {}
 
     def reload_servers(self):
@@ -83,7 +87,7 @@ class SSHConnectionPool:
             return client
 
         except Exception as e:
-            print(f"连接服务器 {server_name} 失败: {e}")
+            logger.error(f"连接服务器 {server_name} 失败: {e}")
             client.close()
             return None
 
@@ -162,9 +166,8 @@ class SSHConnectionPool:
             for client in self.connections.values():
                 try:
                     client.close()
-                except:
-                    pass
-            self.connections.clear()
+                except Exception as e:
+                    logger.warning(f"关闭SSH连接时出错: {e}")
 
 
 # 全局 SSH 连接池实例

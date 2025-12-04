@@ -29,6 +29,13 @@ def log_error(message):
 try:
     from app import create_app, socketio, SOCKETIO_AVAILABLE
     from app.services.task_monitor import task_monitor
+    from app.utils.setup_wizard import check_and_run_setup
+
+    # 检查并运行首次启动向导（仅在非帮助模式下）
+    if '--help' not in sys.argv and '-h' not in sys.argv:
+        if not check_and_run_setup():
+            print("\n配置未完成，程序退出")
+            sys.exit(0)
 
     # 创建 Flask 应用
     app = create_app()

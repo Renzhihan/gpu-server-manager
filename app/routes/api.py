@@ -7,11 +7,17 @@ from app.services.file_manager import file_manager
 from app.services.email_service import email_service
 from app.services.task_monitor import task_monitor
 from app.services.port_forward import port_forward_manager
+from app.services.audit_logger import audit_logger
 from config.settings import Config
 import json
 import os
 
 bp = Blueprint('api', __name__)
+
+
+def get_current_user():
+    """获取当前用户"""
+    return session.get('role', 'anonymous')
 
 # 用户偏好设置文件路径
 USER_PREFS_FILE = os.path.join(os.path.dirname(__file__), '../../data/user_prefs.json')
@@ -53,6 +59,7 @@ def add_server():
     import yaml
 
     data = request.get_json()
+    user = get_current_user()
 
     # 验证必填字段
     required_fields = ['name', 'host', 'port', 'username']
@@ -101,6 +108,9 @@ def add_server():
 
         # 重新加载服务器配置
         ssh_pool.reload_servers()
+
+        # 记录审计日志
+        audit_logger.server_add(user, data['name'])
 
         return jsonify({'success': True, 'message': '服务器已添加'})
 

@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
 from functools import wraps
 import os
+from app.services.audit_logger import audit_logger
 
 bp = Blueprint('main', __name__)
 
@@ -56,13 +57,19 @@ def login():
             session['logged_in'] = True
             session['role'] = 'admin'
             session.permanent = True  # 使session持久化
+            # 记录审计日志
+            audit_logger.login_success('admin', role='admin')
             return jsonify({'success': True})
         else:
+            # 记录登录失败
+            audit_logger.login_failed('admin', reason='密码错误')
             return jsonify({'success': False, 'error': '密码错误'}), 401
     elif mode == 'user':
         session['logged_in'] = True
         session['role'] = 'user'
         session.permanent = True
+        # 记录审计日志
+        audit_logger.login_success('user', role='user')
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'error': '无效的模式'}), 400
@@ -71,6 +78,9 @@ def login():
 @bp.route('/logout')
 def logout():
     """退出登录"""
+    # 记录退出日志
+    user = session.get('role', 'anonymous')
+    audit_logger.logout(user)
     session.clear()
     return redirect(url_for('main.login_page'))
 

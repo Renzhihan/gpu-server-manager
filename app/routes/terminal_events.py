@@ -4,6 +4,7 @@ Web SSH 终端 SocketIO 事件处理
 from flask_socketio import emit, disconnect
 from flask import session, request
 from app.services.terminal_manager import terminal_manager
+from app.services.audit_logger import audit_logger
 
 
 def register_terminal_events(socketio):
@@ -22,6 +23,9 @@ def register_terminal_events(socketio):
     @socketio.on('disconnect')
     def handle_disconnect():
         """客户端断开连接"""
+        user = session.get('role', 'anonymous')
+        # 记录审计日志
+        audit_logger.info('TERMINAL', f'终端会话关闭: {request.sid}', user=user)
         terminal_manager.close_session(request.sid)
         print(f"[Terminal] Client disconnected: {request.sid}")
 
@@ -29,6 +33,7 @@ def register_terminal_events(socketio):
     def handle_create_terminal(data):
         """创建新的终端会话"""
         server_name = data.get('server_name')
+        user = session.get('role', 'anonymous')
 
         if not server_name:
             emit('terminal_error', {'error': '未指定服务器'})
@@ -38,8 +43,12 @@ def register_terminal_events(socketio):
         result = terminal_manager.create_session(server_name, request.sid, socketio)
 
         if result['success']:
+            # 记录审计日志
+            audit_logger.terminal_session(user, server_name, action='创建')
             emit('terminal_ready', {'server_name': server_name})
         else:
+            # 记录失败
+            audit_logger.security_event('TERMINAL_FAILED', f'终端连接失败: {server_name} - {result.get("error")}')
             emit('terminal_error', {'error': result.get('error', '未知错误')})
 
     @socketio.on('terminal_input')

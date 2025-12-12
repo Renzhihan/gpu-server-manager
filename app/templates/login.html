@@ -11,67 +11,190 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
 
     <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --danger-gradient: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+            --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
+
         .login-container {
-            max-width: 450px;
+            max-width: 460px;
             width: 100%;
-            padding: 2rem;
+            padding: 1.5rem;
         }
+
         .login-card {
             background: white;
-            border-radius: 1rem;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            border-radius: 1.25rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             overflow: hidden;
+            transition: transform 0.3s ease;
         }
+
+        .login-card:hover {
+            transform: translateY(-2px);
+        }
+
         .login-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             color: white;
             padding: 2rem;
             text-align: center;
+            position: relative;
+            overflow: hidden;
         }
+
+        .login-header::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
+            animation: shimmer 3s infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); }
+        }
+
         .login-header i {
-            font-size: 3rem;
+            font-size: 3.5rem;
             margin-bottom: 1rem;
+            position: relative;
+            z-index: 1;
         }
+
+        .login-header h3 {
+            position: relative;
+            z-index: 1;
+            font-weight: 600;
+        }
+
         .login-body {
             padding: 2rem;
         }
+
+        /* 锁定状态卡片 */
+        .lockout-card {
+            background: var(--danger-gradient);
+            color: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(238, 90, 90, 0.4); }
+            50% { box-shadow: 0 0 0 15px rgba(238, 90, 90, 0); }
+        }
+
+        .lockout-card .lockout-icon {
+            font-size: 3rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .lockout-card .countdown {
+            font-size: 2.5rem;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+            margin: 0.5rem 0;
+        }
+
+        .lockout-card .lockout-message {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        /* 模式选择按钮 */
         .mode-btn {
             width: 100%;
-            padding: 1rem;
-            margin-bottom: 1rem;
+            padding: 1.25rem 1rem;
+            margin-bottom: 0.75rem;
             border: 2px solid #e9ecef;
-            border-radius: 0.5rem;
-            transition: all 0.3s;
+            border-radius: 0.75rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
+            background: white;
+            position: relative;
+            overflow: hidden;
         }
+
+        .mode-btn::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+            transition: left 0.5s;
+        }
+
+        .mode-btn:hover::before {
+            left: 100%;
+        }
+
         .mode-btn:hover {
             border-color: #667eea;
             background-color: #f8f9fa;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.25);
         }
+
         .mode-btn.active {
             border-color: #667eea;
-            background-color: #667eea;
+            background: var(--primary-gradient);
             color: white;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.35);
         }
+
+        .mode-btn.active .text-success,
+        .mode-btn.active .text-danger {
+            color: white !important;
+        }
+
+        .mode-btn.active .text-muted {
+            color: rgba(255,255,255,0.8) !important;
+        }
+
+        .mode-btn.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
         .mode-icon {
-            font-size: 2rem;
+            font-size: 2.25rem;
             margin-bottom: 0.5rem;
+            transition: transform 0.3s;
         }
+
+        .mode-btn:hover .mode-icon {
+            transform: scale(1.1);
+        }
+
+        /* 分隔线 */
         .divider {
             text-align: center;
             margin: 1.5rem 0;
             position: relative;
         }
+
         .divider::before {
             content: "";
             position: absolute;
@@ -79,19 +202,207 @@
             left: 0;
             right: 0;
             height: 1px;
-            background: #dee2e6;
+            background: linear-gradient(90deg, transparent, #dee2e6, transparent);
         }
+
         .divider span {
             background: white;
             padding: 0 1rem;
             position: relative;
             color: #6c757d;
+            font-size: 0.85rem;
         }
+
+        /* 表单样式 */
         #adminForm {
             display: none;
         }
-        .alert {
+
+        .form-control-lg {
+            border-radius: 0.75rem;
+            padding: 0.875rem 1rem;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s;
+        }
+
+        .form-control-lg:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.15);
+        }
+
+        /* 密码输入容器 */
+        .password-input-group {
+            position: relative;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #6c757d;
+            cursor: pointer;
+            padding: 0.25rem;
+            transition: color 0.2s;
+        }
+
+        .password-toggle:hover {
+            color: #667eea;
+        }
+
+        /* 登录按钮 */
+        .btn-login {
+            background: var(--primary-gradient);
+            border: none;
+            border-radius: 0.75rem;
+            padding: 0.875rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-login::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn-login:hover::before {
+            left: 100%;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-login:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 警告提示 */
+        .alert-custom {
+            border: none;
+            border-radius: 0.75rem;
+            padding: 1rem 1.25rem;
             display: none;
+        }
+
+        .alert-danger-custom {
+            background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
+            color: #c53030;
+            border-left: 4px solid #fc8181;
+        }
+
+        .alert-warning-custom {
+            background: linear-gradient(135deg, #fffaf0 0%, #feebc8 100%);
+            color: #c05621;
+            border-left: 4px solid #f6ad55;
+        }
+
+        /* 尝试次数指示器 */
+        .attempts-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .attempt-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            transition: all 0.3s;
+        }
+
+        .attempt-dot.used {
+            background: #fc8181;
+            box-shadow: 0 0 8px rgba(252, 129, 129, 0.5);
+        }
+
+        .attempt-dot.warning {
+            background: #f6ad55;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 用户模式提示 */
+        .user-mode-info {
+            background: linear-gradient(135deg, #e6fffa 0%, #b2f5ea 100%);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            border-left: 4px solid #38b2ac;
+        }
+
+        .btn-user-mode {
+            background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
+            border: none;
+            border-radius: 0.75rem;
+            padding: 0.875rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-user-mode:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(56, 178, 172, 0.4);
+        }
+
+        /* 系统信息 */
+        .system-info {
+            font-size: 0.8rem;
+            color: #a0aec0;
+        }
+
+        .system-info i {
+            color: #68d391;
+        }
+
+        /* 加载动画 */
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+            border-width: 0.15em;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 1rem;
+            }
+
+            .login-header {
+                padding: 1.5rem;
+            }
+
+            .login-body {
+                padding: 1.5rem;
+            }
+
+            .mode-btn {
+                padding: 1rem 0.75rem;
+            }
+
+            .mode-icon {
+                font-size: 1.75rem;
+            }
         }
     </style>
 </head>
@@ -101,29 +412,50 @@
             <div class="login-header">
                 <i class="bi bi-hdd-rack"></i>
                 <h3>GPU 服务器管理系统</h3>
-                <p class="mb-0">选择访问模式</p>
+                <p class="mb-0 opacity-75">选择访问模式</p>
             </div>
 
             <div class="login-body">
-                <div class="alert alert-danger" id="errorAlert"></div>
+                <!-- 锁定状态卡片 -->
+                <div class="lockout-card" id="lockoutCard" style="display: none;">
+                    <div class="lockout-icon">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </div>
+                    <div class="lockout-title fw-bold mb-1">账户已临时锁定</div>
+                    <div class="countdown" id="lockoutCountdown">--:--</div>
+                    <div class="lockout-message" id="lockoutMessage">
+                        由于多次登录失败，请稍后再试
+                    </div>
+                </div>
+
+                <!-- 错误/警告提示 -->
+                <div class="alert alert-custom alert-danger-custom" id="errorAlert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <span id="errorText"></span>
+                </div>
+
+                <div class="alert alert-custom alert-warning-custom" id="warningAlert">
+                    <i class="bi bi-exclamation-circle-fill me-2"></i>
+                    <span id="warningText"></span>
+                </div>
 
                 <!-- 模式选择 -->
-                <div class="row mb-4">
+                <div class="row mb-3" id="modeSelection">
                     <div class="col-6">
-                        <div class="mode-btn" onclick="selectMode('user')">
+                        <div class="mode-btn" id="userModeBtn" onclick="selectMode('user')">
                             <div class="mode-icon text-success">
-                                <i class="bi bi-person"></i>
+                                <i class="bi bi-person-fill"></i>
                             </div>
-                            <h6>用户模式</h6>
+                            <h6 class="mb-1 fw-semibold">用户模式</h6>
                             <small class="text-muted">查看和监控</small>
                         </div>
                     </div>
                     <div class="col-6">
-                        <div class="mode-btn" onclick="selectMode('admin')">
+                        <div class="mode-btn" id="adminModeBtn" onclick="selectMode('admin')">
                             <div class="mode-icon text-danger">
-                                <i class="bi bi-shield-lock"></i>
+                                <i class="bi bi-shield-lock-fill"></i>
                             </div>
-                            <h6>管理员模式</h6>
+                            <h6 class="mb-1 fw-semibold">管理员模式</h6>
                             <small class="text-muted">完全控制</small>
                         </div>
                     </div>
@@ -132,25 +464,53 @@
                 <!-- 管理员密码输入 -->
                 <form id="adminForm" onsubmit="submitLogin(event)">
                     <div class="mb-3">
-                        <label for="adminPassword" class="form-label">
-                            <i class="bi bi-key"></i> 管理员密码
+                        <label for="adminPassword" class="form-label fw-medium">
+                            <i class="bi bi-key-fill text-primary"></i> 管理员密码
                         </label>
-                        <input type="password" class="form-control form-control-lg"
-                               id="adminPassword" placeholder="请输入管理员密码" required>
+                        <div class="password-input-group">
+                            <input type="password" class="form-control form-control-lg"
+                                   id="adminPassword" placeholder="请输入管理员密码" required
+                                   autocomplete="current-password">
+                            <button type="button" class="password-toggle" onclick="togglePassword()">
+                                <i class="bi bi-eye" id="toggleIcon"></i>
+                            </button>
+                        </div>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        <i class="bi bi-box-arrow-in-right"></i> 登录
+                    <button type="submit" class="btn btn-primary btn-login btn-lg w-100" id="loginBtn">
+                        <span id="loginBtnText">
+                            <i class="bi bi-box-arrow-in-right me-1"></i> 登录
+                        </span>
+                        <span id="loginBtnLoading" style="display: none;">
+                            <span class="spinner-border spinner-border-sm me-2"></span> 验证中...
+                        </span>
                     </button>
+
+                    <!-- 尝试次数指示器 -->
+                    <div class="attempts-indicator" id="attemptsIndicator" style="display: none;">
+                        <div class="attempt-dot" id="dot1"></div>
+                        <div class="attempt-dot" id="dot2"></div>
+                        <div class="attempt-dot" id="dot3"></div>
+                        <div class="attempt-dot" id="dot4"></div>
+                        <div class="attempt-dot" id="dot5"></div>
+                    </div>
                 </form>
 
                 <!-- 用户模式提示 -->
-                <div id="userModeInfo" style="display:none;">
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i>
-                        <strong>用户模式</strong> - 您可以查看服务器状态、GPU监控、文件浏览等，但无法进行用户管理和Docker操作。
+                <div id="userModeInfo" style="display: none;">
+                    <div class="user-mode-info mb-3">
+                        <div class="d-flex align-items-start">
+                            <i class="bi bi-info-circle-fill text-teal me-2 mt-1" style="color: #319795;"></i>
+                            <div>
+                                <strong>用户模式</strong>
+                                <div class="small mt-1" style="color: #234e52;">
+                                    您可以查看服务器状态、GPU 监控、文件浏览等，<br>
+                                    但无法进行用户管理和 Docker 操作。
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <button class="btn btn-success btn-lg w-100" onclick="enterUserMode()">
-                        <i class="bi bi-box-arrow-in-right"></i> 进入用户模式
+                    <button class="btn btn-user-mode btn-lg w-100 text-white" onclick="enterUserMode()">
+                        <i class="bi bi-box-arrow-in-right me-1"></i> 进入用户模式
                     </button>
                 </div>
 
@@ -158,11 +518,10 @@
                     <span>系统信息</span>
                 </div>
 
-                <div class="text-center text-muted">
-                    <small>
-                        <i class="bi bi-shield-check"></i> 安全加密传输<br>
-                        Version 1.0
-                    </small>
+                <div class="text-center system-info">
+                    <i class="bi bi-shield-check me-1"></i> 安全加密传输
+                    <span class="mx-2">|</span>
+                    <span id="versionInfo">Version 1.0</span>
                 </div>
             </div>
         </div>
@@ -171,35 +530,197 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let selectedMode = null;
+        let lockoutTimer = null;
+        let remainingSeconds = 0;
+        let failedAttempts = 0;
+        const maxAttempts = 5;
+
+        // 初始化：检查锁定状态
+        document.addEventListener('DOMContentLoaded', function() {
+            // 从服务器传递的初始状态
+            const initialStatus = {{ lock_status | tojson | safe }};
+            if (initialStatus && initialStatus.locked) {
+                showLockout(initialStatus.remaining_seconds);
+            } else if (initialStatus && initialStatus.attempts > 0) {
+                failedAttempts = initialStatus.attempts;
+                updateAttemptsIndicator();
+            }
+        });
 
         function selectMode(mode) {
+            // 如果处于锁定状态且选择管理员模式，阻止操作
+            if (mode === 'admin' && remainingSeconds > 0) {
+                shakeElement(document.getElementById('lockoutCard'));
+                return;
+            }
+
             selectedMode = mode;
 
             // 更新按钮样式
-            document.querySelectorAll('.mode-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.currentTarget.classList.add('active');
+            document.getElementById('userModeBtn').classList.remove('active');
+            document.getElementById('adminModeBtn').classList.remove('active');
 
-            // 显示/隐藏相应表单
             if (mode === 'admin') {
+                document.getElementById('adminModeBtn').classList.add('active');
                 document.getElementById('adminForm').style.display = 'block';
                 document.getElementById('userModeInfo').style.display = 'none';
                 document.getElementById('adminPassword').focus();
+                if (failedAttempts > 0) {
+                    document.getElementById('attemptsIndicator').style.display = 'flex';
+                }
             } else {
+                document.getElementById('userModeBtn').classList.add('active');
                 document.getElementById('adminForm').style.display = 'none';
                 document.getElementById('userModeInfo').style.display = 'block';
+                document.getElementById('attemptsIndicator').style.display = 'none';
             }
 
             // 隐藏错误提示
+            hideAlerts();
+        }
+
+        function togglePassword() {
+            const passwordInput = document.getElementById('adminPassword');
+            const toggleIcon = document.getElementById('toggleIcon');
+
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                toggleIcon.classList.remove('bi-eye');
+                toggleIcon.classList.add('bi-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                toggleIcon.classList.remove('bi-eye-slash');
+                toggleIcon.classList.add('bi-eye');
+            }
+        }
+
+        function hideAlerts() {
             document.getElementById('errorAlert').style.display = 'none';
+            document.getElementById('warningAlert').style.display = 'none';
+        }
+
+        function showError(message) {
+            const alert = document.getElementById('errorAlert');
+            document.getElementById('errorText').textContent = message;
+            alert.style.display = 'block';
+            document.getElementById('warningAlert').style.display = 'none';
+        }
+
+        function showWarning(message) {
+            const alert = document.getElementById('warningAlert');
+            document.getElementById('warningText').textContent = message;
+            alert.style.display = 'block';
+            document.getElementById('errorAlert').style.display = 'none';
+        }
+
+        function showLockout(seconds) {
+            remainingSeconds = seconds;
+            const lockoutCard = document.getElementById('lockoutCard');
+            const adminModeBtn = document.getElementById('adminModeBtn');
+
+            lockoutCard.style.display = 'block';
+            adminModeBtn.classList.add('disabled');
+
+            // 如果正在显示管理员表单，切换回选择界面
+            if (selectedMode === 'admin') {
+                document.getElementById('adminForm').style.display = 'none';
+                document.getElementById('adminModeBtn').classList.remove('active');
+                selectedMode = null;
+            }
+
+            // 隐藏尝试次数指示器
+            document.getElementById('attemptsIndicator').style.display = 'none';
+
+            updateLockoutDisplay();
+            startLockoutTimer();
+        }
+
+        function updateLockoutDisplay() {
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            const display = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('lockoutCountdown').textContent = display;
+        }
+
+        function startLockoutTimer() {
+            if (lockoutTimer) {
+                clearInterval(lockoutTimer);
+            }
+
+            lockoutTimer = setInterval(function() {
+                remainingSeconds--;
+                updateLockoutDisplay();
+
+                if (remainingSeconds <= 0) {
+                    clearInterval(lockoutTimer);
+                    lockoutTimer = null;
+                    hideLockout();
+                }
+            }, 1000);
+        }
+
+        function hideLockout() {
+            document.getElementById('lockoutCard').style.display = 'none';
+            document.getElementById('adminModeBtn').classList.remove('disabled');
+            failedAttempts = 0;
+            updateAttemptsIndicator();
+            hideAlerts();
+        }
+
+        function updateAttemptsIndicator() {
+            const indicator = document.getElementById('attemptsIndicator');
+
+            for (let i = 1; i <= maxAttempts; i++) {
+                const dot = document.getElementById(`dot${i}`);
+                dot.classList.remove('used', 'warning');
+
+                if (i <= failedAttempts) {
+                    dot.classList.add('used');
+                    if (i === failedAttempts && failedAttempts >= maxAttempts - 1) {
+                        dot.classList.add('warning');
+                    }
+                }
+            }
+
+            if (failedAttempts > 0 && selectedMode === 'admin') {
+                indicator.style.display = 'flex';
+            }
+        }
+
+        function shakeElement(element) {
+            element.style.animation = 'none';
+            element.offsetHeight; // 触发重绘
+            element.style.animation = 'shake 0.5s ease-in-out';
+        }
+
+        function setLoginButtonLoading(loading) {
+            const btn = document.getElementById('loginBtn');
+            const text = document.getElementById('loginBtnText');
+            const spinner = document.getElementById('loginBtnLoading');
+
+            if (loading) {
+                btn.disabled = true;
+                text.style.display = 'none';
+                spinner.style.display = 'inline';
+            } else {
+                btn.disabled = false;
+                text.style.display = 'inline';
+                spinner.style.display = 'none';
+            }
         }
 
         async function submitLogin(event) {
             event.preventDefault();
 
+            // 如果正在锁定中，不允许提交
+            if (remainingSeconds > 0) {
+                shakeElement(document.getElementById('lockoutCard'));
+                return;
+            }
+
             const password = document.getElementById('adminPassword').value;
-            const errorAlert = document.getElementById('errorAlert');
+            setLoginButtonLoading(true);
+            hideAlerts();
 
             try {
                 const response = await fetch('/login', {
@@ -216,16 +737,33 @@
                 const result = await response.json();
 
                 if (result.success) {
+                    // 登录成功，跳转
                     window.location.href = '/';
                 } else {
-                    errorAlert.textContent = result.error || '密码错误，请重试';
-                    errorAlert.style.display = 'block';
+                    // 登录失败
                     document.getElementById('adminPassword').value = '';
                     document.getElementById('adminPassword').focus();
+
+                    if (result.locked) {
+                        // 触发锁定
+                        showLockout(result.lockout_seconds || result.remaining_seconds || 60);
+                        showError(result.error || '账户已被临时锁定');
+                    } else {
+                        // 普通失败
+                        failedAttempts = maxAttempts - (result.remaining_attempts || 0);
+                        updateAttemptsIndicator();
+
+                        if (result.remaining_attempts <= 2) {
+                            showWarning(result.error || `密码错误，还剩 ${result.remaining_attempts} 次尝试机会`);
+                        } else {
+                            showError(result.error || '密码错误，请重试');
+                        }
+                    }
                 }
             } catch (error) {
-                errorAlert.textContent = '登录失败，请稍后重试';
-                errorAlert.style.display = 'block';
+                showError('登录失败，请检查网络连接后重试');
+            } finally {
+                setLoginButtonLoading(false);
             }
         }
 
@@ -246,12 +784,23 @@
                 if (result.success) {
                     window.location.href = '/';
                 } else {
-                    alert('进入用户模式失败');
+                    showError('进入用户模式失败，请重试');
                 }
             } catch (error) {
-                alert('登录失败，请稍后重试');
+                showError('登录失败，请检查网络连接后重试');
             }
         }
+
+        // 添加抖动动画
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+                20%, 40%, 60%, 80% { transform: translateX(5px); }
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>

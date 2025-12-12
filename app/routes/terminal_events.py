@@ -5,6 +5,9 @@ from flask_socketio import emit, disconnect
 from flask import session, request
 from app.services.terminal_manager import terminal_manager
 from app.services.audit_logger import audit_logger
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def register_terminal_events(socketio):
@@ -17,7 +20,7 @@ def register_terminal_events(socketio):
         # if 'logged_in' not in session:
         #     disconnect()
         #     return False
-        print(f"[Terminal] Client connected: {request.sid}")
+        logger.debug(f"[Terminal] Client connected: {request.sid}")
         return True
 
     @socketio.on('disconnect')
@@ -27,7 +30,7 @@ def register_terminal_events(socketio):
         # 记录审计日志
         audit_logger.info('TERMINAL', f'终端会话关闭: {request.sid}', user=user)
         terminal_manager.close_session(request.sid)
-        print(f"[Terminal] Client disconnected: {request.sid}")
+        logger.debug(f"[Terminal] Client disconnected: {request.sid}")
 
     @socketio.on('create_terminal')
     def handle_create_terminal(data):

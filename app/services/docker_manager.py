@@ -1,6 +1,20 @@
 import json
+import shlex
 from typing import Dict, List
 from .ssh_manager import ssh_pool
+from .audit_logger import audit_logger
+from flask import session
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def get_current_user() -> str:
+    """获取当前用户"""
+    try:
+        return session.get('role', 'system')
+    except RuntimeError:
+        return 'system'
 
 
 class DockerManager:
@@ -106,9 +120,18 @@ class DockerManager:
             'error': str
         }
         """
-        command = f"docker pull {image_name}"
+        # 安全处理镜像名称
+        safe_image_name = shlex.quote(image_name)
+        command = f"docker pull {safe_image_name}"
 
         result = ssh_pool.execute_command(server_name, command, timeout=300)
+
+        # 记录审计日志
+        user = get_current_user()
+        if result['success']:
+            audit_logger.docker_image_pull(user, server_name, image_name)
+        else:
+            audit_logger.error('DOCKER_IMAGE_PULL', f'拉取镜像失败: {image_name} on {server_name}', user=user)
 
         return {
             'success': result['success'],
@@ -135,9 +158,25 @@ class DockerManager:
                 'error': f'无效的操作: {action}'
             }
 
-        command = f"docker {action} {container_id}"
+        # 安全处理容器 ID
+        safe_container_id = shlex.quote(container_id)
+        command = f"docker {action} {safe_container_id}"
 
         result = ssh_pool.execute_command(server_name, command, timeout=30)
+
+        # 记录审计日志
+        user = get_current_user()
+        if result['success']:
+            if action == 'start':
+                audit_logger.docker_container_start(user, server_name, container_id)
+            elif action == 'stop':
+                audit_logger.docker_container_stop(user, server_name, container_id)
+            elif action == 'rm':
+                audit_logger.docker_container_remove(user, server_name, container_id)
+            else:
+                audit_logger.docker_operation(user, server_name, action, container_id)
+        else:
+            audit_logger.error('DOCKER', f'容器操作失败: {action} {container_id} on {server_name}', user=user)
 
         return {
             'success': result['success'],

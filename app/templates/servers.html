@@ -4,23 +4,26 @@
 {% block page_title %}服务器管理{% endblock %}
 
 {% block content %}
-<div class="alert alert-info">
-    <i class="bi bi-info-circle"></i>
-    <strong>提示:</strong> 服务器配置存储在 <code>config/servers.yaml</code> 文件中。可以在此界面直接添加、编辑或删除服务器。
-</div>
-
 <div class="row mb-3">
     <div class="col-md-6">
         <button class="btn btn-success" onclick="showAddServerModal()">
             <i class="bi bi-plus-circle"></i> 添加服务器
         </button>
+        <div class="btn-group ms-2">
+            <button class="btn btn-outline-primary" onclick="showImportModal()">
+                <i class="bi bi-upload"></i> 导入
+            </button>
+            <button class="btn btn-outline-primary" onclick="exportServers()">
+                <i class="bi bi-download"></i> 导出
+            </button>
+        </div>
     </div>
     <div class="col-md-6 text-end">
         <button class="btn btn-info" onclick="testAllConnections()">
             <i class="bi bi-broadcast"></i> 一键测试所有连接
         </button>
-        <button class="btn btn-primary" onclick="reloadConfig()">
-            <i class="bi bi-arrow-clockwise"></i> 重新加载配置
+        <button class="btn btn-secondary" onclick="refreshConnections()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新连接池
         </button>
     </div>
 </div>
@@ -130,6 +133,112 @@
         </div>
     </div>
 </div>
+
+<!-- 导入 Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-upload"></i> 导入服务器配置
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">导入模式</label>
+                    <div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="importMode" id="modeMerge" value="merge" checked>
+                            <label class="form-check-label" for="modeMerge">
+                                <strong>合并</strong> - 同名服务器跳过，保留现有配置
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="importMode" id="modeOverwrite" value="overwrite">
+                            <label class="form-check-label" for="modeOverwrite">
+                                <strong>覆盖</strong> - 同名服务器使用导入的配置覆盖
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="importMode" id="modeReplace" value="replace">
+                            <label class="form-check-label text-danger" for="modeReplace">
+                                <strong>替换</strong> - 删除所有现有配置，仅保留导入的
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="importYaml" class="form-label">YAML 配置内容</label>
+                    <textarea class="form-control font-monospace" id="importYaml" rows="15" placeholder="servers:
+  - name: GPU Server 1
+    host: 192.168.1.100
+    port: 22
+    username: root
+    password: your_password
+    gpu_enabled: true
+    description: 3090 服务器
+
+  - name: GPU Server 2
+    host: 192.168.1.101
+    port: 22
+    username: root
+    key_file: /root/.ssh/id_rsa
+    gpu_enabled: true
+    description: A100 服务器"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">或选择文件导入</label>
+                    <input type="file" class="form-control" id="importFile" accept=".yaml,.yml" onchange="loadImportFile()">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="importServers()">
+                    <i class="bi bi-upload"></i> 导入
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 导出 Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-download"></i> 导出服务器配置
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>安全提示:</strong> 默认导出不包含密码信息。如需包含密码，请勾选下方选项。
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="exportWithCredentials">
+                    <label class="form-check-label" for="exportWithCredentials">
+                        包含密码（<span class="text-danger">敏感信息</span>）
+                    </label>
+                </div>
+                <textarea class="form-control font-monospace" id="exportYaml" rows="15" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="downloadExport()">
+                    <i class="bi bi-download"></i> 下载文件
+                </button>
+                <button type="button" class="btn btn-outline-primary" onclick="copyExport()">
+                    <i class="bi bi-clipboard"></i> 复制
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -172,7 +281,7 @@ function showEditServerModal(server) {
     document.getElementById('serverUsername').value = server.username;
     document.getElementById('serverGpuEnabled').checked = server.gpu_enabled;
 
-    // 认证方式（编辑模式下保持原样，不显示密码）
+    // 认证方式
     if (server.key_file) {
         document.getElementById('authKey').checked = true;
         document.getElementById('serverKeyFile').value = server.key_file;
@@ -213,7 +322,7 @@ async function saveServer() {
             utils.showAlert('请输入密码', 'warning');
             return;
         }
-        if (password) {  // 编辑模式下，只有提供了新密码才更新
+        if (password) {
             serverData.password = password;
         }
     } else {
@@ -226,13 +335,11 @@ async function saveServer() {
 
     let result;
     if (isEditMode) {
-        // 更新服务器
         result = await utils.apiRequest(`/api/servers/${originalName}/update`, {
             method: 'PUT',
             body: JSON.stringify(serverData)
         });
     } else {
-        // 添加服务器
         result = await utils.apiRequest('/api/servers/add', {
             method: 'POST',
             body: JSON.stringify(serverData)
@@ -272,7 +379,16 @@ async function loadServers() {
     const result = await utils.apiRequest('/api/servers');
 
     if (!result.success || result.servers.length === 0) {
-        container.innerHTML = '<div class="alert alert-warning">未配置服务器，请点击"添加服务器"按钮添加。</div>';
+        container.innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i>
+                <strong>未配置服务器</strong>
+                <p class="mb-2">您可以通过以下方式添加服务器：</p>
+                <ul class="mb-0">
+                    <li>点击 <strong>添加服务器</strong> 按钮手动添加</li>
+                    <li>点击 <strong>导入</strong> 按钮从 YAML 文件批量导入</li>
+                </ul>
+            </div>`;
         return;
     }
 
@@ -301,6 +417,7 @@ async function loadServers() {
                         <p><strong>地址:</strong> ${server.host}:${server.port}</p>
                         <p><strong>用户名:</strong> ${server.username}</p>
                         <p><strong>描述:</strong> ${server.description || '无'}</p>
+                        <p><strong>认证:</strong> ${server.key_file ? '<i class="bi bi-key"></i> SSH密钥' : '<i class="bi bi-lock"></i> 密码'}</p>
                     </div>
                     <div class="col-md-6 text-end">
                         <button class="btn btn-primary btn-sm" onclick="testConnection('${server.name}')">
@@ -319,13 +436,12 @@ async function loadServers() {
     container.innerHTML = html;
 }
 
-async function reloadConfig() {
+async function refreshConnections() {
     const result = await utils.apiRequest('/api/servers/reload', { method: 'POST' });
     if (result.success) {
         utils.showAlert(result.message, 'success');
-        loadServers();
     } else {
-        utils.showAlert('重新加载配置失败', 'danger');
+        utils.showAlert('刷新连接池失败', 'danger');
     }
 }
 
@@ -438,6 +554,110 @@ async function testAllConnections() {
             </div>
         `;
     }
+}
+
+// ==================== 导入/导出功能 ====================
+
+function showImportModal() {
+    document.getElementById('importYaml').value = '';
+    document.getElementById('importFile').value = '';
+    document.getElementById('modeMerge').checked = true;
+    new bootstrap.Modal(document.getElementById('importModal')).show();
+}
+
+function loadImportFile() {
+    const file = document.getElementById('importFile').files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('importYaml').value = e.target.result;
+        };
+        reader.readAsText(file);
+    }
+}
+
+async function importServers() {
+    const yamlContent = document.getElementById('importYaml').value.trim();
+    const mode = document.querySelector('input[name="importMode"]:checked').value;
+
+    if (!yamlContent) {
+        utils.showAlert('请输入或选择 YAML 配置', 'warning');
+        return;
+    }
+
+    if (mode === 'replace') {
+        if (!confirm('⚠️ 替换模式将删除所有现有服务器配置！\n\n确定要继续吗？')) {
+            return;
+        }
+    }
+
+    const result = await utils.apiRequest('/api/servers/import', {
+        method: 'POST',
+        body: JSON.stringify({
+            yaml_content: yamlContent,
+            mode: mode
+        })
+    });
+
+    if (result.success) {
+        let msg = result.message;
+        if (result.errors && result.errors.length > 0) {
+            msg += '\n\n警告:\n' + result.errors.join('\n');
+        }
+        utils.showAlert(msg, 'success');
+        bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+        loadServers();
+    } else {
+        utils.showAlert(result.error || '导入失败', 'danger');
+    }
+}
+
+async function exportServers() {
+    const includeCredentials = document.getElementById('exportWithCredentials')?.checked || false;
+    const result = await utils.apiRequest(`/api/servers/export?include_credentials=${includeCredentials}`);
+
+    if (result.success) {
+        document.getElementById('exportYaml').value = result.yaml;
+        new bootstrap.Modal(document.getElementById('exportModal')).show();
+    } else {
+        utils.showAlert(result.error || '导出失败', 'danger');
+    }
+}
+
+// 监听导出选项变化
+document.addEventListener('DOMContentLoaded', function() {
+    const checkbox = document.getElementById('exportWithCredentials');
+    if (checkbox) {
+        checkbox.addEventListener('change', async function() {
+            const result = await utils.apiRequest(`/api/servers/export?include_credentials=${this.checked}`);
+            if (result.success) {
+                document.getElementById('exportYaml').value = result.yaml;
+            }
+        });
+    }
+});
+
+function downloadExport() {
+    const yaml = document.getElementById('exportYaml').value;
+    const blob = new Blob([yaml], { type: 'text/yaml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'servers.yaml';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    utils.showAlert('配置已下载', 'success');
+}
+
+function copyExport() {
+    const yaml = document.getElementById('exportYaml').value;
+    navigator.clipboard.writeText(yaml).then(() => {
+        utils.showAlert('已复制到剪贴板', 'success');
+    }).catch(() => {
+        utils.showAlert('复制失败', 'danger');
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

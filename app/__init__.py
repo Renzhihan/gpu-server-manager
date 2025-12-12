@@ -43,6 +43,16 @@ def create_app(config_name=None):
     allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5000,http://127.0.0.1:5000').split(',')
     CORS(app, origins=allowed_origins, supports_credentials=True)
 
+    # 初始化 API 速率限制
+    from app.middleware.rate_limit import setup_rate_limiting
+    setup_rate_limiting(app)
+    logger.info("API 速率限制已启用")
+
+    # 注册全局异常处理器
+    from app.middleware.error_handler import register_error_handlers
+    register_error_handlers(app)
+    logger.info("全局异常处理器已注册")
+
     # 初始化 SocketIO (如果可用)
     global socketio
     if SOCKETIO_AVAILABLE:

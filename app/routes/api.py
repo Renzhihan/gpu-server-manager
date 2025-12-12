@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, redirect, url_for
+from functools import wraps
 from typing import Dict, List, Any, Tuple
 from app.services.ssh_manager import ssh_pool
 from app.services.gpu_monitor import gpu_monitor
@@ -23,6 +24,42 @@ bp = Blueprint('api', __name__)
 
 # 应用启动时间
 START_TIME = time.time()
+
+
+# ==================== 认证装饰器 ====================
+
+def api_login_required(f):
+    """API 登录验证装饰器 - 返回 JSON 错误而非重定向"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return jsonify({
+                'success': False,
+                'error': '未授权访问，请先登录',
+                'code': 'UNAUTHORIZED'
+            }), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def api_admin_required(f):
+    """API 管理员权限验证装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return jsonify({
+                'success': False,
+                'error': '未授权访问，请先登录',
+                'code': 'UNAUTHORIZED'
+            }), 401
+        if session.get('role') != 'admin':
+            return jsonify({
+                'success': False,
+                'error': '权限不足，需要管理员权限',
+                'code': 'FORBIDDEN'
+            }), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def get_current_user() -> str:
@@ -117,6 +154,7 @@ def save_user_prefs(prefs: Dict[str, Any]) -> None:
 # ==================== 服务器管理 API ====================
 
 @bp.route('/servers', methods=['GET'])
+@api_login_required
 def list_servers():
     """获取服务器列表"""
     servers = ssh_pool.get_server_list()
@@ -124,175 +162,137 @@ def list_servers():
 
 
 @bp.route('/servers/add', methods=['POST'])
+@api_admin_required
 def add_server():
     """添加服务器"""
-    import yaml
-
     data = request.get_json()
     user = get_current_user()
 
-    # 验证必填字段
-    required_fields = ['name', 'host', 'port', 'username']
-    for field in required_fields:
-        if not data.get(field):
-            return jsonify({'success': False, 'error': f'缺少必填字段: {field}'}), 400
+    # 构建服务器配置
+    server_config = {
+        'name': data.get('name', '').strip(),
+        'host': data.get('host', '').strip(),
+        'port': int(data.get('port', 22)),
+        'username': data.get('username', '').strip(),
+        'gpu_enabled': data.get('gpu_enabled', True),
+        'description': data.get('description', '').strip()
+    }
 
-    # 验证密码或密钥至少提供一个
-    if not data.get('password') and not data.get('key_file'):
-        return jsonify({'success': False, 'error': '必须提供密码或SSH密钥文件路径'}), 400
+    if data.get('password'):
+        server_config['password'] = data['password']
+    if data.get('key_file'):
+        server_config['key_file'] = data['key_file'].strip()
 
-    try:
-        # 读取现有配置
-        servers_config_path = Config.SERVERS_CONFIG
-        with open(servers_config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f) or {}
+    # 使用 SSH 管理器添加服务器
+    result = ssh_pool.add_server(server_config)
 
-        if 'servers' not in config:
-            config['servers'] = []
-
-        # 检查服务器名称是否已存在
-        if any(s['name'] == data['name'] for s in config['servers']):
-            return jsonify({'success': False, 'error': f'服务器名称 "{data["name"]}" 已存在'}), 400
-
-        # 构建新服务器配置
-        new_server = {
-            'name': data['name'],
-            'host': data['host'],
-            'port': int(data['port']),
-            'username': data['username'],
-            'gpu_enabled': data.get('gpu_enabled', True),
-            'description': data.get('description', '')
-        }
-
-        if data.get('password'):
-            new_server['password'] = data['password']
-        if data.get('key_file'):
-            new_server['key_file'] = data['key_file']
-
-        # 添加到配置
-        config['servers'].append(new_server)
-
-        # 保存配置
-        with open(servers_config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-
-        # 重新加载服务器配置
-        ssh_pool.reload_servers()
-
+    if result['success']:
         # 记录审计日志
-        audit_logger.server_add(user, data['name'])
+        audit_logger.server_add(user, server_config['name'])
 
-        return jsonify({'success': True, 'message': '服务器已添加'})
-
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'添加服务器失败: {str(e)}'}), 500
+    return jsonify(result), 200 if result['success'] else 400
 
 
 @bp.route('/servers/<server_name>/update', methods=['PUT'])
+@api_admin_required
 def update_server(server_name):
     """更新服务器配置"""
-    import yaml
-
     data = request.get_json()
+    user = get_current_user()
 
-    try:
-        # 读取现有配置
-        servers_config_path = Config.SERVERS_CONFIG
-        with open(servers_config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f) or {}
+    # 使用 SSH 管理器更新服务器
+    result = ssh_pool.update_server(server_name, data)
 
-        if 'servers' not in config:
-            return jsonify({'success': False, 'error': '服务器配置文件无效'}), 500
+    if result['success']:
+        # 记录审计日志
+        audit_logger.server_modify(user, server_name)
 
-        # 查找要更新的服务器
-        server_found = False
-        for i, server in enumerate(config['servers']):
-            if server['name'] == server_name:
-                server_found = True
-
-                # 更新字段
-                if 'host' in data:
-                    config['servers'][i]['host'] = data['host']
-                if 'port' in data:
-                    config['servers'][i]['port'] = int(data['port'])
-                if 'username' in data:
-                    config['servers'][i]['username'] = data['username']
-                if 'password' in data:
-                    config['servers'][i]['password'] = data['password']
-                if 'key_file' in data:
-                    config['servers'][i]['key_file'] = data['key_file']
-                if 'gpu_enabled' in data:
-                    config['servers'][i]['gpu_enabled'] = data['gpu_enabled']
-                if 'description' in data:
-                    config['servers'][i]['description'] = data['description']
-
-                # 如果提供了新名称，则更新名称
-                if 'name' in data and data['name'] != server_name:
-                    # 检查新名称是否已存在
-                    if any(s['name'] == data['name'] for s in config['servers'] if s['name'] != server_name):
-                        return jsonify({'success': False, 'error': f'服务器名称 "{data["name"]}" 已存在'}), 400
-                    config['servers'][i]['name'] = data['name']
-
-                break
-
-        if not server_found:
-            return jsonify({'success': False, 'error': '服务器不存在'}), 404
-
-        # 保存配置
-        with open(servers_config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-
-        # 重新加载服务器配置
-        ssh_pool.reload_servers()
-
-        return jsonify({'success': True, 'message': '服务器配置已更新'})
-
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'更新服务器失败: {str(e)}'}), 500
+    return jsonify(result), 200 if result['success'] else 400
 
 
 @bp.route('/servers/<server_name>/delete', methods=['DELETE'])
+@api_admin_required
 def delete_server(server_name):
     """删除服务器"""
-    import yaml
+    user = get_current_user()
 
-    try:
-        # 读取现有配置
-        servers_config_path = Config.SERVERS_CONFIG
-        with open(servers_config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f) or {}
+    # 使用 SSH 管理器删除服务器
+    result = ssh_pool.delete_server(server_name)
 
-        if 'servers' not in config:
-            return jsonify({'success': False, 'error': '服务器配置文件无效'}), 500
+    if result['success']:
+        # 记录审计日志
+        audit_logger.server_delete(user, server_name)
 
-        # 查找并删除服务器
-        original_count = len(config['servers'])
-        config['servers'] = [s for s in config['servers'] if s['name'] != server_name]
+    return jsonify(result), 200 if result['success'] else 400
 
-        if len(config['servers']) == original_count:
-            return jsonify({'success': False, 'error': '服务器不存在'}), 404
 
-        # 保存配置
-        with open(servers_config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+@bp.route('/servers/import', methods=['POST'])
+@api_admin_required
+def import_servers():
+    """导入服务器配置（YAML格式）
 
-        # 重新加载服务器配置
-        ssh_pool.reload_servers()
+    请求体:
+    {
+        "yaml_content": "servers:\\n  - name: server1\\n    host: ...",
+        "mode": "merge"  // merge(合并,同名跳过), overwrite(同名覆盖), replace(完全替换)
+    }
+    """
+    data = request.get_json()
+    user = get_current_user()
 
-        return jsonify({'success': True, 'message': '服务器已删除'})
+    yaml_content = data.get('yaml_content', '')
+    mode = data.get('mode', 'merge')
 
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'删除服务器失败: {str(e)}'}), 500
+    if not yaml_content:
+        return jsonify({'success': False, 'error': '缺少 YAML 内容'}), 400
+
+    if mode not in ['merge', 'overwrite', 'replace']:
+        return jsonify({'success': False, 'error': '无效的导入模式'}), 400
+
+    result = ssh_pool.import_servers(yaml_content, mode)
+
+    if result['success']:
+        audit_logger.info(
+            'SERVER_IMPORT',
+            f'导入服务器配置: {result.get("imported", 0)} 个成功',
+            user=user
+        )
+
+    return jsonify(result), 200 if result['success'] else 400
+
+
+@bp.route('/servers/export', methods=['GET'])
+@api_admin_required
+def export_servers():
+    """导出服务器配置（YAML格式）
+
+    查询参数:
+    - include_credentials: true/false (是否包含密码，默认false)
+    """
+    include_credentials = request.args.get('include_credentials', 'false').lower() == 'true'
+
+    result = ssh_pool.export_servers(include_credentials)
+
+    if result['success']:
+        audit_logger.info(
+            'SERVER_EXPORT',
+            f'导出服务器配置: {result.get("count", 0)} 个',
+            user=get_current_user()
+        )
+
+    return jsonify(result)
 
 
 @bp.route('/servers/reload', methods=['POST'])
+@api_admin_required
 def reload_servers():
-    """重新加载服务器配置"""
+    """刷新服务器连接池"""
     ssh_pool.reload_servers()
-    return jsonify({'success': True, 'message': '服务器配置已重新加载'})
+    return jsonify({'success': True, 'message': '服务器连接池已刷新'})
 
 
 @bp.route('/servers/<server_name>/test', methods=['GET'])
+@api_login_required
 def test_connection(server_name):
     """测试服务器连接"""
     result = ssh_pool.execute_command(server_name, 'echo "test"', timeout=5)
@@ -300,6 +300,7 @@ def test_connection(server_name):
 
 
 @bp.route('/servers/test-all', methods=['GET'])
+@api_login_required
 def test_all_connections():
     """一键测试所有服务器连接"""
     servers = ssh_pool.get_server_list()
@@ -325,6 +326,7 @@ def test_all_connections():
 
 
 @bp.route('/servers/<server_name>/execute', methods=['POST'])
+@api_login_required
 def execute_command_on_server(server_name):
     """在服务器上执行命令（只读操作）"""
     data = request.get_json()
@@ -344,6 +346,7 @@ def execute_command_on_server(server_name):
 
 
 @bp.route('/servers/<server_name>/info', methods=['GET'])
+@api_login_required
 def get_server_info(server_name):
     """获取服务器系统信息"""
     commands = {
@@ -367,6 +370,7 @@ def get_server_info(server_name):
 # ==================== GPU 监控 API ====================
 
 @bp.route('/gpu/<server_name>', methods=['GET'])
+@api_login_required
 def get_gpu_info(server_name):
     """获取 GPU 信息"""
     result = gpu_monitor.get_gpu_info(server_name)
@@ -374,6 +378,7 @@ def get_gpu_info(server_name):
 
 
 @bp.route('/gpu/<server_name>/processes', methods=['GET'])
+@api_login_required
 def get_gpu_processes(server_name):
     """获取 GPU 进程信息"""
     gpu_id = request.args.get('gpu_id', type=int)
@@ -382,6 +387,7 @@ def get_gpu_processes(server_name):
 
 
 @bp.route('/gpu/<server_name>/all-processes', methods=['GET'])
+@api_login_required
 def get_all_gpu_processes(server_name):
     """获取所有 GPU 上运行的详细进程信息"""
     # 使用 nvidia-smi pmon 获取进程和GPU的对应关系
@@ -490,6 +496,7 @@ def get_all_gpu_processes(server_name):
 # ==================== Docker 管理 API ====================
 
 @bp.route('/docker/<server_name>/containers', methods=['GET'])
+@api_login_required
 def list_containers(server_name):
     """列出 Docker 容器"""
     all_containers = request.args.get('all', 'false').lower() == 'true'
@@ -498,6 +505,7 @@ def list_containers(server_name):
 
 
 @bp.route('/docker/<server_name>/images', methods=['GET'])
+@api_login_required
 def list_images(server_name):
     """列出 Docker 镜像"""
     result = docker_manager.list_images(server_name)
@@ -505,6 +513,7 @@ def list_images(server_name):
 
 
 @bp.route('/docker/<server_name>/images/pull', methods=['POST'])
+@api_admin_required
 def pull_image(server_name):
     """拉取 Docker 镜像"""
     data = request.get_json()
@@ -518,6 +527,7 @@ def pull_image(server_name):
 
 
 @bp.route('/docker/<server_name>/containers/<container_id>/<action>', methods=['POST'])
+@api_admin_required
 def container_action(server_name, container_id, action):
     """执行容器操作 (start, stop, restart, remove)"""
     result = docker_manager.container_action(server_name, container_id, action)
@@ -525,6 +535,7 @@ def container_action(server_name, container_id, action):
 
 
 @bp.route('/docker/<server_name>/containers/<container_id>/logs', methods=['GET'])
+@api_login_required
 def get_container_logs(server_name, container_id):
     """获取容器日志"""
     tail = request.args.get('tail', 100, type=int)
@@ -535,6 +546,7 @@ def get_container_logs(server_name, container_id):
 # ==================== 用户管理 API ====================
 
 @bp.route('/users/<server_name>', methods=['GET'])
+@api_admin_required
 def list_users(server_name):
     """列出用户"""
     result = user_manager.list_users(server_name)
@@ -542,6 +554,7 @@ def list_users(server_name):
 
 
 @bp.route('/users/<server_name>/create', methods=['POST'])
+@api_admin_required
 def create_user(server_name):
     """创建用户"""
     data = request.get_json()
@@ -557,6 +570,7 @@ def create_user(server_name):
 
 
 @bp.route('/users/<server_name>/create-advanced', methods=['POST'])
+@api_admin_required
 def create_user_advanced(server_name):
     """创建用户（增强版：支持工作目录和Docker容器）"""
     data = request.get_json()
@@ -622,6 +636,7 @@ def create_user_advanced(server_name):
 
 
 @bp.route('/users/<server_name>/<username>/delete', methods=['DELETE'])
+@api_admin_required
 def delete_user(server_name, username):
     """删除用户"""
     remove_home = request.args.get('remove_home', 'true').lower() == 'true'
@@ -630,6 +645,7 @@ def delete_user(server_name, username):
 
 
 @bp.route('/users/<server_name>/<username>/password', methods=['PUT'])
+@api_admin_required
 def change_password(server_name, username):
     """修改密码"""
     data = request.get_json()
@@ -645,6 +661,7 @@ def change_password(server_name, username):
 # ==================== 文件管理 API ====================
 
 @bp.route('/files/<server_name>/list', methods=['GET'])
+@api_login_required
 def list_directory(server_name):
     """列出目录"""
     path = request.args.get('path', '/')
@@ -653,6 +670,7 @@ def list_directory(server_name):
 
 
 @bp.route('/files/<server_name>/mkdir', methods=['POST'])
+@api_login_required
 def create_directory(server_name):
     """创建目录"""
     data = request.get_json()
@@ -667,6 +685,7 @@ def create_directory(server_name):
 
 
 @bp.route('/files/<server_name>/delete', methods=['DELETE'])
+@api_admin_required
 def delete_path(server_name):
     """删除文件或目录"""
     data = request.get_json()
@@ -681,6 +700,7 @@ def delete_path(server_name):
 
 
 @bp.route('/files/<server_name>/disk', methods=['GET'])
+@api_login_required
 def get_disk_usage(server_name):
     """获取磁盘使用情况"""
     result = file_manager.get_disk_usage(server_name)
@@ -688,6 +708,7 @@ def get_disk_usage(server_name):
 
 
 @bp.route('/files/<server_name>/download', methods=['GET'])
+@api_login_required
 def download_file(server_name):
     """下载文件（支持文本和二进制文件）"""
     from flask import send_file, Response
@@ -735,6 +756,7 @@ def download_file(server_name):
 # ==================== 任务监控 API ====================
 
 @bp.route('/tasks', methods=['GET'])
+@api_login_required
 def list_tasks():
     """列出所有任务"""
     server_name = request.args.get('server_name')
@@ -743,6 +765,7 @@ def list_tasks():
 
 
 @bp.route('/tasks/create', methods=['POST'])
+@api_login_required
 def create_task():
     """创建任务监控"""
     try:
@@ -756,7 +779,7 @@ def create_task():
         check_interval = data.get('check_interval', 60)
         timeout = data.get('timeout')  # None 表示无限期
 
-        print(f"[任务创建] 收到请求: server={server_name}, task={task_name}, type={monitor_type}, pid={pid}, gpu_id={gpu_id}, emails={notify_emails}")
+        logger.info(f"[任务创建] 收到请求: server={server_name}, task={task_name}, type={monitor_type}, pid={pid}, gpu_id={gpu_id}")
 
         # 验证必要参数
         if not all([server_name, task_name]):
@@ -772,7 +795,7 @@ def create_task():
         if notify_emails and len(notify_emails) > 0:
             from app.services.email_service import EmailService
             smtp_config = EmailService.get_smtp_config()
-            print(f"[任务创建] SMTP配置检查: username={smtp_config.get('smtp_username')}, has_password={bool(smtp_config.get('smtp_password'))}")
+            logger.debug(f"[任务创建] SMTP配置检查: username已配置={bool(smtp_config.get('smtp_username'))}")
             if not smtp_config.get('smtp_username') or not smtp_config.get('smtp_password'):
                 return jsonify({
                     'success': False,
@@ -790,17 +813,20 @@ def create_task():
             monitor_type=monitor_type
         )
 
-        print(f"[任务创建] 成功创建任务: task_id={task_id}")
+        # 记录审计日志
+        audit_logger.task_create(get_current_user(), task_name, server_name, monitor_type)
+
+        logger.info(f"[任务创建] 成功创建任务: task_id={task_id}")
         return jsonify({'success': True, 'task_id': task_id})
 
     except Exception as e:
         import traceback
-        print(f"[任务创建错误] {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"[任务创建错误] {str(e)}", exc_info=True)
         return jsonify({'success': False, 'error': f'创建任务失败: {str(e)}'}), 500
 
 
 @bp.route('/tasks/<task_id>', methods=['GET'])
+@api_login_required
 def get_task(task_id):
     """获取任务信息"""
     task = task_monitor.get_task(task_id)
@@ -811,6 +837,7 @@ def get_task(task_id):
 
 
 @bp.route('/tasks/<task_id>', methods=['PUT'])
+@api_login_required
 def update_task(task_id):
     """更新任务配置"""
     data = request.get_json()
@@ -833,10 +860,13 @@ def update_task(task_id):
 
 
 @bp.route('/tasks/<task_id>', methods=['DELETE'])
+@api_login_required
 def delete_task(task_id):
     """删除任务"""
     success = task_monitor.remove_task(task_id)
     if success:
+        # 记录审计日志
+        audit_logger.task_delete(get_current_user(), task_id)
         return jsonify({'success': True, 'message': '任务已删除'})
     else:
         return jsonify({'success': False, 'error': '任务不存在'}), 404
@@ -845,6 +875,7 @@ def delete_task(task_id):
 # ==================== 邮件服务 API ====================
 
 @bp.route('/email/status', methods=['GET'])
+@api_login_required
 def email_status():
     """检查邮件配置状态"""
     from app.services.email_service import EmailService
@@ -867,6 +898,7 @@ def email_status():
 
 
 @bp.route('/email/templates', methods=['GET'])
+@api_login_required
 def email_templates():
     """获取常见邮箱服务商配置模板"""
     from app.services.email_service import EmailService
@@ -878,6 +910,7 @@ def email_templates():
 
 
 @bp.route('/email/config', methods=['POST'])
+@api_admin_required
 def save_email_config():
     """保存邮件配置"""
     from app.services.email_service import EmailService
@@ -917,6 +950,7 @@ def save_email_config():
 
 
 @bp.route('/email/send', methods=['POST'])
+@api_login_required
 def send_email():
     """发送测试邮件"""
     data = request.get_json()
@@ -934,6 +968,7 @@ def send_email():
 # ==================== 系统 API ====================
 
 @bp.route('/system/status', methods=['GET'])
+@api_login_required
 def system_status():
     """获取系统状态"""
     return jsonify({
@@ -947,6 +982,7 @@ def system_status():
 # ==================== 安全验证 API ====================
 
 @bp.route('/auth/verify', methods=['POST'])
+@api_login_required
 def verify_admin_password():
     """验证管理员密码（用于高危操作）"""
     data = request.get_json()
@@ -961,6 +997,7 @@ def verify_admin_password():
 # ==================== 用户偏好设置 API ====================
 
 @bp.route('/prefs', methods=['GET'])
+@api_login_required
 def get_user_prefs():
     """获取用户偏好设置"""
     prefs = load_user_prefs()
@@ -968,6 +1005,7 @@ def get_user_prefs():
 
 
 @bp.route('/prefs', methods=['POST'])
+@api_login_required
 def update_user_prefs():
     """更新用户偏好设置"""
     data = request.get_json()
@@ -980,6 +1018,7 @@ def update_user_prefs():
 # ==================== 端口转发 API ====================
 
 @bp.route('/forwards', methods=['GET'])
+@api_login_required
 def list_forwards():
     """列出所有端口转发"""
     server_name = request.args.get('server_name')
@@ -988,6 +1027,7 @@ def list_forwards():
 
 
 @bp.route('/forwards/create', methods=['POST'])
+@api_login_required
 def create_forward():
     """创建端口转发"""
     data = request.get_json()
@@ -1009,13 +1049,15 @@ def create_forward():
         name=name,
         remote_port=int(remote_port),
         local_port=int(local_port) if local_port else None,
-        tool_type=tool_type
+        tool_type=tool_type,
+        user=get_current_user()
     )
 
     return jsonify(result)
 
 
 @bp.route('/forwards/<forward_id>', methods=['GET'])
+@api_login_required
 def get_forward(forward_id):
     """获取端口转发详情"""
     forward = port_forward_manager.get_forward(forward_id)
@@ -1026,9 +1068,10 @@ def get_forward(forward_id):
 
 
 @bp.route('/forwards/<forward_id>', methods=['DELETE'])
+@api_login_required
 def delete_forward(forward_id):
     """删除端口转发"""
-    success = port_forward_manager.delete_forward(forward_id)
+    success = port_forward_manager.delete_forward(forward_id, user=get_current_user())
     if success:
         return jsonify({'success': True, 'message': '端口转发已删除'})
     else:
@@ -1036,9 +1079,10 @@ def delete_forward(forward_id):
 
 
 @bp.route('/forwards/<forward_id>/stop', methods=['POST'])
+@api_login_required
 def stop_forward(forward_id):
     """停止端口转发"""
-    success = port_forward_manager.stop_forward(forward_id)
+    success = port_forward_manager.stop_forward(forward_id, user=get_current_user())
     if success:
         return jsonify({'success': True, 'message': '端口转发已停止'})
     else:
@@ -1046,6 +1090,7 @@ def stop_forward(forward_id):
 
 
 @bp.route('/forwards/tools', methods=['GET'])
+@api_login_required
 def get_tool_suggestions():
     """获取常用工具建议"""
     tools = port_forward_manager.get_tool_suggestions()

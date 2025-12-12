@@ -1,6 +1,9 @@
 import re
 from typing import Dict, List, Optional
 from .ssh_manager import ssh_pool
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class GPUMonitor:
@@ -58,7 +61,7 @@ class GPUMonitor:
                         continue
 
         except Exception as e:
-            print(f"解析 nvidia-smi 输出失败: {e}")
+            logger.error(f"解析 nvidia-smi 输出失败: {e}")
 
         return gpus
 

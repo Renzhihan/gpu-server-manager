@@ -1,24 +1,66 @@
+"""
+文件管理服务
+提供远程文件系统的浏览、创建、删除等功能
+"""
 import base64
 import json
 from typing import Dict, List
 from .ssh_manager import ssh_pool
+from app.utils.security import (
+    CommandSanitizer, validate_and_sanitize_path, escape_shell_arg
+)
+from app.services.audit_logger import audit_logger
+from config.constants import Timeout, AuditEvent
 
 
 class FileManager:
     """文件管理服务"""
 
+    # 禁止删除的危险路径
+    DANGEROUS_DELETE_PATHS = [
+        '/', '/home', '/root', '/etc', '/var', '/usr',
+        '/bin', '/sbin', '/lib', '/lib64', '/boot', '/dev',
+        '/proc', '/sys', '/run', '/tmp', '/opt'
+    ]
+
     @staticmethod
-    def list_directory(server_name: str, path: str = '/') -> Dict:
+    def list_directory(
+        server_name: str,
+        path: str = '/',
+        user: str = 'system'
+    ) -> Dict:
         """
         列出目录内容
 
-        返回格式: {
-            'success': bool,
-            'files': List[Dict],
-            'error': str
-        }
+        Args:
+            server_name: 服务器名称
+            path: 目录路径
+            user: 操作用户（用于审计日志）
+
+        Returns:
+            {
+                'success': bool,
+                'files': List[Dict],
+                'error': str
+            }
         """
-        remote_path = path or '/'
+        # 验证并清理路径
+        is_valid, safe_path, error = validate_and_sanitize_path(path)
+        if not is_valid:
+            audit_logger.warning(
+                AuditEvent.PATH_TRAVERSAL_ATTEMPT,
+                f'路径验证失败: {path} - {error}',
+                user=user
+            )
+            return {
+                'success': False,
+                'files': [],
+                'error': error
+            }
+
+        remote_path = safe_path or '/'
+
+        # 使用 Python 脚本在远端执行，路径通过 JSON 安全传递
         script = f"""
 import os
 import json
@@ -102,7 +144,11 @@ sys.exit(0)
             f"exec(compile(base64.b64decode('{encoded_script}'), '<remote_ls>', 'exec'))\""
         )
 
-        result = ssh_pool.execute_command(server_name, command, timeout=20)
+        result = ssh_pool.execute_command(
+            server_name,
+            command,
+            timeout=Timeout.COMMAND_MEDIUM
+        )
 
         if not result['success']:
             return {
@@ -135,6 +181,13 @@ sys.exit(0)
                 'error': payload.get('error', '无法访问目录')
             }
 
+        # 记录审计日志
+        audit_logger.info(
+            AuditEvent.FILE_LIST,
+            f'列出目录: {safe_path} on {server_name}',
+            user=user
+        )
+
         return {
             'success': True,
             'files': payload.get('files', []),
@@ -142,46 +195,146 @@ sys.exit(0)
         }
 
     @staticmethod
-    def create_directory(server_name: str, path: str, recursive: bool = True) -> Dict:
+    def create_directory(
+        server_name: str,
+        path: str,
+        recursive: bool = True,
+        user: str = 'system'
+    ) -> Dict:
         """
         创建目录
 
-        返回格式: {
-            'success': bool,
-            'message': str,
-            'error': str
-        }
-        """
-        flag = '-p' if recursive else ''
-        command = f"mkdir {flag} '{path}'"
+        Args:
+            server_name: 服务器名称
+            path: 目录路径
+            recursive: 是否递归创建
+            user: 操作用户（用于审计日志）
 
-        result = ssh_pool.execute_command(server_name, command, timeout=10)
+        Returns:
+            {
+                'success': bool,
+                'message': str,
+                'error': str
+            }
+        """
+        # 验证并清理路径
+        is_valid, safe_path, error = validate_and_sanitize_path(path)
+        if not is_valid:
+            audit_logger.warning(
+                AuditEvent.PATH_TRAVERSAL_ATTEMPT,
+                f'创建目录路径验证失败: {path} - {error}',
+                user=user
+            )
+            return {
+                'success': False,
+                'message': '',
+                'error': error
+            }
+
+        # 构建安全命令
+        command = CommandSanitizer.build_mkdir_command(safe_path, recursive)
+
+        result = ssh_pool.execute_command(
+            server_name,
+            command,
+            timeout=Timeout.COMMAND_SHORT
+        )
+
+        if result['success']:
+            audit_logger.info(
+                AuditEvent.DIRECTORY_CREATE,
+                f'创建目录: {safe_path} on {server_name}',
+                user=user
+            )
 
         return {
             'success': result['success'],
-            'message': f'目录 {path} 创建成功' if result['success'] else '',
+            'message': f'目录 {safe_path} 创建成功' if result['success'] else '',
             'error': result['stderr'] if not result['success'] else ''
         }
 
     @staticmethod
-    def delete_path(server_name: str, path: str, recursive: bool = False) -> Dict:
+    def delete_path(
+        server_name: str,
+        path: str,
+        recursive: bool = False,
+        user: str = 'system'
+    ) -> Dict:
         """
         删除文件或目录
 
-        返回格式: {
-            'success': bool,
-            'message': str,
-            'error': str
-        }
-        """
-        flag = '-rf' if recursive else '-f'
-        command = f"rm {flag} '{path}'"
+        Args:
+            server_name: 服务器名称
+            path: 文件/目录路径
+            recursive: 是否递归删除
+            user: 操作用户（用于审计日志）
 
-        result = ssh_pool.execute_command(server_name, command, timeout=30)
+        Returns:
+            {
+                'success': bool,
+                'message': str,
+                'error': str
+            }
+        """
+        # 验证并清理路径
+        is_valid, safe_path, error = validate_and_sanitize_path(path)
+        if not is_valid:
+            audit_logger.warning(
+                AuditEvent.PATH_TRAVERSAL_ATTEMPT,
+                f'删除路径验证失败: {path} - {error}',
+                user=user
+            )
+            return {
+                'success': False,
+                'message': '',
+                'error': error
+            }
+
+        # 额外的安全检查：禁止删除危险路径
+        if safe_path in FileManager.DANGEROUS_DELETE_PATHS:
+            audit_logger.warning(
+                AuditEvent.SECURITY_VIOLATION,
+                f'尝试删除危险路径: {safe_path}',
+                user=user
+            )
+            return {
+                'success': False,
+                'message': '',
+                'error': '禁止删除系统关键目录'
+            }
+
+        # 检查是否是危险路径的直接子目录（一级子目录）
+        for dangerous in FileManager.DANGEROUS_DELETE_PATHS:
+            if dangerous != '/' and safe_path.startswith(dangerous + '/'):
+                # 检查是否只有一级深度
+                remaining = safe_path[len(dangerous) + 1:]
+                if '/' not in remaining and remaining:
+                    # 这是危险路径的直接子目录，需要警告但允许
+                    audit_logger.warning(
+                        AuditEvent.FILE_DELETE,
+                        f'删除系统目录下的项目: {safe_path} (需谨慎)',
+                        user=user
+                    )
+
+        # 构建安全命令
+        command = CommandSanitizer.build_rm_command(safe_path, recursive)
+
+        result = ssh_pool.execute_command(
+            server_name,
+            command,
+            timeout=Timeout.COMMAND_MEDIUM
+        )
+
+        if result['success']:
+            audit_logger.info(
+                AuditEvent.FILE_DELETE,
+                f'删除路径: {safe_path} on {server_name}',
+                user=user
+            )
 
         return {
             'success': result['success'],
-            'message': f'{path} 删除成功' if result['success'] else '',
+            'message': f'{safe_path} 删除成功' if result['success'] else '',
             'error': result['stderr'] if not result['success'] else ''
         }
 
@@ -190,15 +343,23 @@ sys.exit(0)
         """
         获取磁盘使用情况
 
-        返回格式: {
-            'success': bool,
-            'disks': List[Dict],
-            'error': str
-        }
+        Args:
+            server_name: 服务器名称
+
+        Returns:
+            {
+                'success': bool,
+                'disks': List[Dict],
+                'error': str
+            }
         """
         command = "df -h | grep -v 'tmpfs\\|loop'"
 
-        result = ssh_pool.execute_command(server_name, command, timeout=10)
+        result = ssh_pool.execute_command(
+            server_name,
+            command,
+            timeout=Timeout.COMMAND_SHORT
+        )
 
         if not result['success']:
             return {
@@ -230,6 +391,101 @@ sys.exit(0)
             'disks': disks,
             'error': ''
         }
+
+    @staticmethod
+    def download_file(
+        server_name: str,
+        file_path: str,
+        user: str = 'system'
+    ) -> Dict:
+        """
+        下载文件内容（base64 编码）
+
+        Args:
+            server_name: 服务器名称
+            file_path: 文件路径
+            user: 操作用户（用于审计日志）
+
+        Returns:
+            {
+                'success': bool,
+                'content': bytes,  # base64 解码后的内容
+                'filename': str,
+                'error': str
+            }
+        """
+        # 验证并清理路径
+        is_valid, safe_path, error = validate_and_sanitize_path(file_path)
+        if not is_valid:
+            audit_logger.warning(
+                AuditEvent.PATH_TRAVERSAL_ATTEMPT,
+                f'下载文件路径验证失败: {file_path} - {error}',
+                user=user
+            )
+            return {
+                'success': False,
+                'content': b'',
+                'filename': '',
+                'error': error
+            }
+
+        # 检查文件是否存在
+        check_cmd = f"test -f {escape_shell_arg(safe_path)} && echo 'exists' || echo 'not found'"
+        check_result = ssh_pool.execute_command(
+            server_name,
+            check_cmd,
+            timeout=Timeout.COMMAND_SHORT
+        )
+
+        if 'not found' in check_result.get('stdout', ''):
+            return {
+                'success': False,
+                'content': b'',
+                'filename': '',
+                'error': '文件不存在'
+            }
+
+        # 使用 base64 编码传输
+        command = f"base64 {escape_shell_arg(safe_path)}"
+        result = ssh_pool.execute_command(
+            server_name,
+            command,
+            timeout=Timeout.COMMAND_VERY_LONG
+        )
+
+        if not result['success']:
+            return {
+                'success': False,
+                'content': b'',
+                'filename': '',
+                'error': f'读取文件失败: {result["stderr"]}'
+            }
+
+        try:
+            content = base64.b64decode(result['stdout'])
+            import os
+            filename = os.path.basename(safe_path)
+
+            # 记录审计日志
+            audit_logger.info(
+                AuditEvent.FILE_DOWNLOAD,
+                f'下载文件: {safe_path} on {server_name}',
+                user=user
+            )
+
+            return {
+                'success': True,
+                'content': content,
+                'filename': filename,
+                'error': ''
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'content': b'',
+                'filename': '',
+                'error': f'处理文件失败: {str(e)}'
+            }
 
 
 # 全局文件管理实例

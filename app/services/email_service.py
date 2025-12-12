@@ -6,6 +6,9 @@ from typing import List, Dict, Optional
 from config.settings import Config
 import json
 import os
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class EmailService:
@@ -85,7 +88,7 @@ class EmailService:
                 json.dump(config, f, indent=2)
             return True
         except Exception as e:
-            print(f"保存 SMTP 配置失败: {e}")
+            logger.error(f"保存 SMTP 配置失败: {e}")
             return False
 
     @staticmethod
@@ -181,11 +184,7 @@ class EmailService:
             use_tls = smtp_config.get('smtp_use_tls', True)
             use_ssl = smtp_config.get('smtp_use_ssl', False)
 
-            print(f"[邮件调试] 尝试发送邮件:")
-            print(f"  服务器: {smtp_server}:{smtp_port}")
-            print(f"  加密: {'SSL' if use_ssl or smtp_port == 465 else 'TLS' if use_tls else '无'}")
-            print(f"  发件人: {from_email}")
-            print(f"  收件人: {to_emails}")
+            logger.debug(f"[邮件] 尝试发送邮件: 服务器={smtp_server}:{smtp_port}, 发件人={from_email}, 收件人数={len(to_emails)}")
 
             # 根据配置选择连接方式
             if use_ssl or smtp_port == 465:
@@ -203,49 +202,47 @@ class EmailService:
                     # Python 3.6及以下
                     context.options &= ~ssl.OP_NO_TLSv1
 
-                print(f"[邮件调试] 尝试SSL连接: {smtp_server}:{smtp_port}")
+                logger.debug(f"[邮件] 尝试SSL连接: {smtp_server}:{smtp_port}")
 
                 try:
                     # 方法1: 使用标准SMTP_SSL
                     with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30, context=context) as server:
-                        print(f"[邮件调试] SSL 连接成功")
+                        logger.debug("[邮件] SSL 连接成功")
                         server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
-                        print(f"[邮件调试] 登录成功")
+                        logger.debug("[邮件] 登录成功")
                         server.sendmail(from_email, to_emails, msg.as_string())
-                        print(f"[邮件调试] 邮件发送成功")
+                        logger.info(f"[邮件] 发送成功: {len(to_emails)} 个收件人")
                 except (ssl.SSLError, OSError) as e:
-                    print(f"[邮件调试] SSL直连失败，尝试备用方法: {e}")
+                    logger.warning(f"[邮件] SSL直连失败，尝试备用方法: {e}")
                     # 方法2: 备用方案 - 使用SMTP+STARTTLS（某些QQ邮箱配置需要）
                     # 注意：这里仍然使用465端口，但通过普通连接+升级TLS的方式
                     with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
-                        print(f"[邮件调试] 尝试SMTP普通连接")
+                        logger.debug("[邮件] 尝试SMTP普通连接")
                         server.ehlo()
-                        print(f"[邮件调试] EHLO 完成")
                         # 尝试升级到TLS
                         context_tls = ssl.create_default_context()
                         server.starttls(context=context_tls)
-                        print(f"[邮件调试] STARTTLS 完成")
+                        logger.debug("[邮件] STARTTLS 完成")
                         server.ehlo()
                         server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
-                        print(f"[邮件调试] 登录成功（备用方法）")
+                        logger.debug("[邮件] 登录成功（备用方法）")
                         server.sendmail(from_email, to_emails, msg.as_string())
-                        print(f"[邮件调试] 邮件发送成功（备用方法）")
+                        logger.info(f"[邮件] 发送成功（备用方法）: {len(to_emails)} 个收件人")
             else:
                 # 使用 STARTTLS（端口 587）
                 with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
-                    print(f"[邮件调试] SMTP 连接成功")
+                    logger.debug("[邮件] SMTP 连接成功")
                     server.ehlo()  # 标识客户端
-                    print(f"[邮件调试] EHLO 完成")
                     if use_tls:
                         context = ssl.create_default_context()
                         server.starttls(context=context)
-                        print(f"[邮件调试] STARTTLS 完成")
+                        logger.debug("[邮件] STARTTLS 完成")
                         server.ehlo()  # TLS 后重新标识
                     server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
-                    print(f"[邮件调试] 登录成功")
+                    logger.debug("[邮件] 登录成功")
                     # 使用 sendmail 代替 send_message
                     server.sendmail(from_email, to_emails, msg.as_string())
-                    print(f"[邮件调试] 邮件发送成功")
+                    logger.info(f"[邮件] 发送成功: {len(to_emails)} 个收件人")
 
             return {
                 'success': True,
@@ -259,28 +256,28 @@ class EmailService:
                 error_msg += '（QQ邮箱需要使用授权码，不是QQ密码）'
             elif '163.com' in smtp_config.get('smtp_server', '') or '126.com' in smtp_config.get('smtp_server', ''):
                 error_msg += '（网易邮箱需要使用授权码）'
-            print(f"[邮件错误] 认证失败: {str(e)}")
+            logger.warning(f"[邮件错误] 认证失败: {str(e)}")
             return {
                 'success': False,
                 'message': '',
                 'error': error_msg
             }
         except smtplib.SMTPConnectError as e:
-            print(f"[邮件错误] 连接失败: {str(e)}")
+            logger.warning(f"[邮件错误] 连接失败: {str(e)}")
             return {
                 'success': False,
                 'message': '',
                 'error': f'连接失败：无法连接到SMTP服务器 {smtp_server}:{smtp_port}'
             }
         except smtplib.SMTPServerDisconnected as e:
-            print(f"[邮件错误] 服务器断开: {str(e)}")
+            logger.warning(f"[邮件错误] 服务器断开: {str(e)}")
             return {
                 'success': False,
                 'message': '',
                 'error': f'连接断开：服务器意外关闭连接，请检查端口配置（587用TLS，465用SSL）'
             }
         except IndexError as e:
-            print(f"[邮件错误] 索引错误: {str(e)}")
+            logger.warning(f"[邮件错误] 索引错误: {str(e)}")
             return {
                 'success': False,
                 'message': '',
@@ -288,8 +285,7 @@ class EmailService:
             }
         except Exception as e:
             import traceback
-            print(f"[邮件错误] 未知错误: {str(e)}")
-            print(traceback.format_exc())
+            logger.error(f"[邮件错误] 未知错误: {str(e)}", exc_info=True)
             return {
                 'success': False,
                 'message': '',
